@@ -1,0 +1,31 @@
+id: python-minimal
+version: "1"
+display_name: Minimal Python Project
+description: Python 3.13 project using uv, Ruff, Pyright, Pytest, and Husky
+variables:
+  - project_name
+  - package_name
+files:
+  - source: package/__init__.py.tmpl
+    destination: "{{ .PackageName }}/__init__.py"
+  - source: tests/test_smoke.py.tmpl
+    destination: tests/test_smoke.py
+  - source: .github/dependabot.yml.tmpl
+    destination: .github/dependabot.yml
+  - source: .github/workflows/ci.yml.tmpl
+    destination: .github/workflows/ci.yml
+  - source: .husky/pre-commit.tmpl
+    destination: .husky/pre-commit
+    executable: true
+  - source: .gitignore.tmpl
+    destination: .gitignore
+  - source: .python-version.tmpl
+    destination: .python-version
+  - source: package.json.tmpl
+    destination: package.json
+  - source: pnpm-workspace.yaml.tmpl
+    destination: pnpm-workspace.yaml
+  - source: pyproject.toml.tmpl
+    destination: pyproject.toml
+  - source: README.md.tmpl
+    destination: README.md
