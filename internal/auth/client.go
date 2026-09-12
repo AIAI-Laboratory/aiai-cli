@@ -404,10 +404,6 @@ func ResolveGitHubClientID(injected string) string {
 	))
 }
 
-func validCredential(credential Credential) bool {
-	return strings.TrimSpace(credential.AccessToken) != ""
-}
-
 func validVerificationURI(value string) bool {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
