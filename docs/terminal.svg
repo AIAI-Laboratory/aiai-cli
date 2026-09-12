@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="584" viewBox="0 0 920 584" role="img" aria-labelledby="title"><title id="title">AIAI CLI home screen</title>
+<rect width="920" height="584" rx="12" fill="#18181B"/>
+<path d="M12 0H908Q920 0 920 12V40H0V12Q0 0 12 0Z" fill="#222225"/>
+<circle cx="22" cy="20" r="5" fill="#FF5F56"/><circle cx="40" cy="20" r="5" fill="#FEBC2E"/><circle cx="58" cy="20" r="5" fill="#28C840"/>
+<text x="460" y="25" text-anchor="middle" fill="#929298" font-family="Menlo, monospace" font-size="12">aiai</text>
+<rect x="92.0" y="81.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="101.5" y="71" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="111.0" y="71" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="120.5" y="81.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="177.5" y="81.0" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="187.0" y="71" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="196.5" y="71" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="206.0" y="81.0" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="82.5" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="92.0" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="101.5" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="111.0" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="120.5" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="130.0" y="91" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="187.0" y="101.0" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="196.5" y="91" width="9.5" height="10.0" fill="#ff3b30"/>
+<text x="263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5" y="106" fill="#E8E8ED" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">AIAI CLI</text>
+<text x="358.0 367.5 377.0" y="106" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">dev</text>
+<rect x="77.75" y="111" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="82.5" y="111" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="92.0" y="111" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="101.5" y="111" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="115.75" y="111" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="120.5" y="111" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="130.0" y="111" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="139.5" y="111" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="177.5" y="111" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="187.0" y="111" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="196.5" y="111" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="206.0" y="111" width="9.5" height="10.0" fill="#ff3b30"/>
+<text x="263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5 472.0 481.5 491.0 500.5 510.0 519.5 529.0 538.5" y="126" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">Your next project starts here.</text>
+<rect x="63.5" y="141.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="73.0" y="131" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="82.5" y="131" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="92.0" y="131" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="120.5" y="131" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="130.0" y="131" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="139.5" y="131" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="149.0" y="141.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="177.5" y="131" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="187.0" y="131" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="196.5" y="131" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="206.0" y="131" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="54.0" y="161.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="63.5" y="151" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="73.0" y="151" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="82.5" y="151" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="130.0" y="151" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="139.5" y="151" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="149.0" y="151" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="158.5" y="161.0" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="177.5" y="151" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="187.0" y="151" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="196.5" y="151" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="206.0" y="151" width="9.5" height="20" fill="#ff3b30"/>
+<text x="263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0" y="166" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">~/projects/aiai-cli</text>
+<rect x="49.25" y="171" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="54.0" y="171" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="63.5" y="171" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="73.0" y="171" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="144.25" y="171" width="4.75" height="20" fill="#E8E8ED"/>
+<rect x="149.0" y="171" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="158.5" y="171" width="9.5" height="20" fill="#E8E8ED"/>
+<rect x="177.5" y="171" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="187.0" y="171" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="196.5" y="171" width="9.5" height="20" fill="#ff3b30"/>
+<rect x="206.0" y="171" width="9.5" height="20" fill="#ff3b30"/>
+<text x="263.0" y="186" fill="#36a879" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">●</text>
+<text x="272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5 472.0 481.5 491.0 500.5 510.0 519.5 529.0 538.5" y="186" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> Offline · Embedded templates</text>
+<rect x="44.5" y="191" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="54.0" y="191" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="63.5" y="191" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="149.0" y="191" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="158.5" y="191" width="9.5" height="10.0" fill="#E8E8ED"/>
+<rect x="177.5" y="191" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="187.0" y="191" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="196.5" y="191" width="9.5" height="10.0" fill="#ff3b30"/>
+<rect x="206.0" y="191" width="9.5" height="10.0" fill="#ff3b30"/>
+<text x="35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5 225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5 472.0 481.5 491.0 500.5 510.0 519.5 529.0 538.5 548.0 557.5 567.0 576.5 586.0 595.5 605.0 614.5 624.0 633.5 643.0 652.5 662.0 671.5 681.0 690.5 700.0 709.5 719.0 728.5 738.0 747.5 757.0 766.5 776.0 785.5 795.0 804.5 814.0 823.5 833.0 842.5 852.0 861.5" y="246" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="35.0 44.5" y="266" fill="#ff5f56" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">❯ </text>
+<rect x="54.0" y="251" width="9.5" height="20" fill="#ff5f56"/>
+<text x="54.0" y="266" fill="#18181B" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">T</text>
+<text x="63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5 225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5" y="266" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">ype a command, or choose below…</text>
+<text x="35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5 225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5 472.0 481.5 491.0 500.5 510.0 519.5 529.0 538.5 548.0 557.5 567.0 576.5 586.0 595.5 605.0 614.5 624.0 633.5 643.0 652.5 662.0 671.5 681.0 690.5 700.0 709.5 719.0 728.5 738.0 747.5 757.0 766.5 776.0 785.5 795.0 804.5 814.0 823.5 833.0 842.5 852.0 861.5" y="286" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="16.0 25.5 35.0 44.5" y="326" fill="#E8E8ED" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">  &gt; </text>
+<text x="54.0 63.5 73.0 82.5 92.0" y="326" fill="#ff5f56" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">/init</text>
+<text x="225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5 472.0" y="326" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">Initialize a Python project</text>
+<text x="16.0 25.5 35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5" y="346" fill="#E8E8ED" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">    /help             </text>
+<text x="225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0 443.5 453.0 462.5" y="346" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">Explore keyboard shortcuts</text>
+<text x="16.0 25.5 35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5" y="366" fill="#E8E8ED" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">    /about            </text>
+<text x="225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5" y="366" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">About AIAI CLI</text>
+<text x="16.0 25.5 35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5" y="386" fill="#E8E8ED" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">    /quit             </text>
+<text x="225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5 434.0" y="386" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">Return to your terminal</text>
+<text x="35.0 44.5 54.0" y="506" fill="#ff5f56" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">↑/↓</text>
+<text x="63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5" y="506" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> navigate</text>
+<text x="149.0 158.5 168.0" y="506" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> · </text>
+<text x="177.5 187.0 196.5 206.0 215.5" y="506" fill="#ff5f56" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">enter</text>
+<text x="225.0 234.5 244.0 253.5 263.0 272.5 282.0" y="506" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> select</text>
+<text x="291.5 301.0 310.5" y="506" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> · </text>
+<text x="320.0 329.5 339.0" y="506" fill="#ff5f56" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="700" xml:space="preserve">tab</text>
+<text x="348.5 358.0 367.5 377.0 386.5 396.0 405.5 415.0 424.5" y="506" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve"> complete</text>
+<text x="35.0 44.5 54.0 63.5 73.0 82.5 92.0 101.5 111.0 120.5 130.0 139.5 149.0 158.5 168.0 177.5 187.0 196.5 206.0 215.5 225.0 234.5 244.0 253.5 263.0 272.5 282.0 291.5 301.0 310.5 320.0 329.5 339.0 348.5 358.0 367.5" y="526" fill="#808080" font-family="Menlo, DejaVu Sans Mono, monospace" font-size="15.5" font-weight="400" xml:space="preserve">Type / to browse commands · esc quit</text>
+</svg>

@@ -2,10 +2,12 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
@@ -89,7 +91,7 @@ func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 32, Height: 12})
 	m = next.(Model)
-	if m.viewport.Width() != 28 || m.viewport.Height() != 6 {
+	if m.viewport.Width() != 28 || m.viewport.Height() < 1 || lipgloss.Height(m.View().Content) > 12 {
 		t.Fatal("resize not applied")
 	}
 	if !strings.Contains(m.View().Content, "AIAI") {
@@ -99,6 +101,85 @@ func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	m = next.(Model)
 	if m.err != context.Canceled || cmd == nil || calls != 0 {
 		t.Fatal("cancel did not stop without writing")
+	}
+}
+
+func typeCommand(m Model, value string) Model {
+	for _, r := range value {
+		next, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = next.(Model)
+	}
+	return m
+}
+
+func TestCommandPalette(t *testing.T) {
+	calls := 0
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, Options{})
+	defer m.cancel()
+	m = typeCommand(m, "/abo")
+	if !strings.Contains(m.content(), "/about") || strings.Contains(m.content(), "/init") {
+		t.Fatal("command filter did not narrow the menu")
+	}
+	m, _ = press(m, tea.KeyTab)
+	if m.command.Value() != "/about" {
+		t.Fatal("Tab did not complete the command")
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != about || m.command.Value() != "" {
+		t.Fatal("filtered command did not open About")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	m = typeCommand(m, "/missing")
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != home || !strings.Contains(m.content(), "No matching commands") {
+		t.Fatal("empty results must not execute a command")
+	}
+	m, cmd := press(m, tea.KeyEscape)
+	if cmd != nil || m.command.Value() != "" {
+		t.Fatal("Esc must clear the filter before quitting")
+	}
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyDown)
+	next, _ := m.Update(tea.PasteMsg{Content: "/about"})
+	m = next.(Model)
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != about {
+		t.Fatal("pasted filter retained a stale selection")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	m = typeCommand(m, "/init")
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != selection || calls != 0 {
+		t.Fatal("init must open the wizard without writing files")
+	}
+}
+
+func TestViewsFitTerminal(t *testing.T) {
+	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
+		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about} {
+			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
+				calls := 0
+				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, Options{NoColor: true})
+				defer m.cancel()
+				m.screen = s
+				m.plan = &scaffold.Plan{TargetDir: strings.Repeat("long-path/", 15)}
+				m.result = &scaffold.Result{TargetDir: "demo", Completed: []string{"pyproject.toml"}}
+				m.focus = 5
+				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+				m = next.(Model)
+				view := m.View().Content
+				if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+					t.Fatalf("view is %dx%d, terminal is %dx%d", lipgloss.Width(view), lipgloss.Height(view), size[0], size[1])
+				}
+				if strings.Contains(view, "[38;") || strings.Contains(view, "[48;") {
+					t.Fatal("color emitted with NoColor")
+				}
+				if s == form && size[0] >= 32 && size[1] >= 12 && !strings.Contains(view, "Preview project") {
+					t.Fatal("focused action is hidden")
+				}
+			})
+		}
 	}
 }
 
