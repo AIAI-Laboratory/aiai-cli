@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/aiai-logo.svg" alt="AIAI CLI Logo" width="120" height="120">
+</p>
+
 # AIAI CLI
 
 A deterministic project scaffolder with a Cobra command interface and a Bubble
@@ -37,8 +41,8 @@ The wizard selects a template, collects project fields, previews file operations
 and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
 select, Esc to return, and Ctrl+C to cancel. `?` opens help. The layout adapts to
 smaller terminals and keeps the focused field visible. The AIAI mark is rendered
-with terminal block characters; a scalable version lives in
-[assets/aiai-logo.svg](assets/aiai-logo.svg).
+with terminal block characters; vector and raster versions live in
+[assets/aiai-logo.svg](assets/aiai-logo.svg) and [assets/aiai-logo.png](assets/aiai-logo.png).
 
 ```bash
 aiai init python my-project --dry-run
