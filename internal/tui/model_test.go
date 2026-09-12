@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
@@ -29,6 +31,43 @@ func (f fakeExecutor) Apply(_ context.Context, p scaffold.Plan) (scaffold.Result
 	return r, nil
 }
 
+type fakeAuth struct {
+	polls int
+	user  auth.User
+}
+
+func (f *fakeAuth) StartLogin(context.Context, auth.LoginOptions) (auth.LoginStart, error) {
+	return auth.LoginStart{Device: auth.DeviceAuthorization{AuthID: "flow", UserCode: "ABCD-EFGH", VerificationURI: "https://github.com/login/device", ExpiresAt: time.Now().Add(time.Minute), IntervalSeconds: 1}}, nil
+}
+
+func (f *fakeAuth) PollLogin(context.Context, auth.DeviceAuthorization) (auth.PollResult, error) {
+	f.polls++
+	if f.polls == 1 {
+		return auth.PollResult{Pending: true, RetryAfterSeconds: 1}, nil
+	}
+	return auth.PollResult{User: f.user}, nil
+}
+
+func (f *fakeAuth) Login(context.Context, auth.LoginOptions, func(auth.DeviceAuthorization)) (auth.Result, error) {
+	return auth.Result{Authenticated: true, User: f.user, Storage: "keyring"}, nil
+}
+
+func (f *fakeAuth) WhoAmI(context.Context) (auth.Result, error) {
+	return auth.Result{Authenticated: true, User: f.user, Storage: "keyring"}, nil
+}
+
+func (f *fakeAuth) RequireSession(context.Context) (auth.Credential, auth.User, error) {
+	return auth.Credential{}, f.user, nil
+}
+
+func (f *fakeAuth) Cached() (auth.Result, error) {
+	return auth.Result{Authenticated: f.user.ID != "", User: f.user, Storage: "keyring"}, nil
+}
+
+func (f *fakeAuth) Logout(context.Context) (auth.LogoutResult, error) {
+	return auth.LogoutResult{}, nil
+}
+
 func press(m Model, code rune) (Model, tea.Cmd) {
 	next, cmd := m.Update(tea.KeyPressMsg{Code: code})
 	return next.(Model), cmd
@@ -36,7 +75,7 @@ func press(m Model, code rune) (Model, tea.Cmd) {
 
 func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, Options{})
 	defer m.cancel()
 	m, _ = press(m, tea.KeyEnter)
 	if m.screen != selection {
@@ -80,7 +119,7 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 
 func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
 	defer m.cancel()
 	m, _ = press(m, '?')
 	if m.screen != help {
@@ -115,7 +154,7 @@ func typeCommand(m Model, value string) Model {
 
 func TestCommandPalette(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
 	defer m.cancel()
 	m = typeCommand(m, "/abo")
 	if !strings.Contains(m.content(), "/about") || strings.Contains(m.content(), "/init") {
@@ -158,14 +197,18 @@ func TestCommandPalette(t *testing.T) {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
-		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about} {
+		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
-				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, Options{NoColor: true})
+				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, Options{NoColor: true})
 				defer m.cancel()
 				m.screen = s
 				m.plan = &scaffold.Plan{TargetDir: strings.Repeat("long-path/", 15)}
 				m.result = &scaffold.Result{TargetDir: "demo", Completed: []string{"pyproject.toml"}}
+				user := auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}
+				m.authUser = &user
+				m.authDevice = &auth.DeviceAuthorization{UserCode: "ABCD-EFGH", VerificationURI: "https://github.com/login/device"}
+				m.authText = "Signed in."
 				m.focus = 5
 				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				m = next.(Model)
@@ -184,10 +227,88 @@ func TestViewsFitTerminal(t *testing.T) {
 	}
 }
 
+func TestAuthCommandPaletteFlow(t *testing.T) {
+	calls := 0
+	authenticator := &fakeAuth{user: auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}}
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, Options{})
+	defer m.cancel()
+	m = typeCommand(m, "/login")
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != authStarting || cmd == nil {
+		t.Fatal("login did not start")
+	}
+	next, cmd := m.Update(cmd())
+	m = next.(Model)
+	if m.screen != authWaiting || m.authDevice == nil || m.authDevice.UserCode != "ABCD-EFGH" || cmd == nil {
+		t.Fatal("device code was not shown")
+	}
+	next, cmd = m.Update(authPollTickMsg{})
+	m = next.(Model)
+	next, cmd = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != authWaiting || cmd == nil {
+		t.Fatal("pending login did not schedule another poll")
+	}
+	next, cmd = m.Update(authPollTickMsg{})
+	m = next.(Model)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != authResult || m.authUser == nil || m.authUser.Login != "octocat" {
+		t.Fatal("authorized login did not update the profile")
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != home || !strings.Contains(m.header(), "@octocat") {
+		t.Fatal("signed-in status is missing")
+	}
+	m = typeCommand(m, "/whoami")
+	m, cmd = press(m, tea.KeyEnter)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != profile || !strings.Contains(m.content(), "GitHub ID: 42") {
+		t.Fatal("whoami did not show the profile")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	m = typeCommand(m, "/logout")
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != logoutConfirmation || m.logoutYes {
+		t.Fatal("logout must default to no")
+	}
+	m, _ = press(m, tea.KeyDown)
+	m, cmd = press(m, tea.KeyEnter)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != authResult || m.authUser != nil || !m.authOK {
+		t.Fatal("logout did not clear the signed-in state")
+	}
+}
+
+func TestLogoutCancellationWaitsForLocalCleanup(t *testing.T) {
+	calls := 0
+	authenticator := &fakeAuth{user: auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}}
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, Options{})
+	defer m.cancel()
+	user := authenticator.user
+	m.authUser, m.screen, m.logoutYes = &user, logoutConfirmation, true
+	m, logoutCmd := press(m, tea.KeyEnter)
+	if m.screen != loggingOut || logoutCmd == nil {
+		t.Fatal("logout did not start")
+	}
+	next, quitCmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m = next.(Model)
+	if quitCmd != nil || !m.canceling {
+		t.Fatal("cancellation quit before logout cleanup")
+	}
+	next, quitCmd = m.Update(logoutCmd())
+	m = next.(Model)
+	if quitCmd == nil || m.err != context.Canceled {
+		t.Fatal("logout cleanup did not finish cancellation")
+	}
+}
+
 func TestDryRunAndConflictNeverApply(t *testing.T) {
 	for _, conflict := range []bool{false, true} {
 		calls := 0
-		m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, Options{DryRun: true})
+		m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{DryRun: true})
 		m.screen = preview
 		action := scaffold.Create
 		if conflict {
@@ -207,7 +328,7 @@ func TestDryRunAndConflictNeverApply(t *testing.T) {
 
 func TestPreviewScrollAndPartialCancellation(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
 	defer m.cancel()
 	m.screen = preview
 	m.plan = &scaffold.Plan{}

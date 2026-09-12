@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 )
 
@@ -38,11 +40,85 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = context.Canceled
 			return m, tea.Quit
 		}
+	case authCachedMsg:
+		if msg.err == nil && msg.result.Authenticated {
+			user := msg.result.User
+			m.authUser, m.authStore = &user, msg.result.Storage
+		}
+	case authStartedMsg:
+		if m.screen != authStarting {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m.authFailure(msg.err)
+		}
+		if msg.start.Existing != nil {
+			m.setAuthResult(*msg.start.Existing)
+			m.screen = profile
+			return m, nil
+		}
+		device := msg.start.Device
+		m.authDevice = &device
+		m.screen = authWaiting
+		return m, scheduleAuthPoll(device.IntervalSeconds)
+	case authPollTickMsg:
+		if m.screen != authWaiting || m.authDevice == nil {
+			return m, nil
+		}
+		attempt := *m.authDevice
+		return m, func() tea.Msg {
+			poll, err := m.auth.PollLogin(m.ctx, attempt)
+			var result auth.Result
+			if err == nil && !poll.Pending {
+				result, err = m.auth.Cached()
+			}
+			return authPollMsg{poll: poll, result: result, err: err}
+		}
+	case authPollMsg:
+		if m.screen != authWaiting {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m.authFailure(msg.err)
+		}
+		if msg.poll.Pending {
+			seconds := msg.poll.RetryAfterSeconds
+			if seconds < 1 && m.authDevice != nil {
+				seconds = m.authDevice.IntervalSeconds
+			}
+			return m, scheduleAuthPoll(seconds)
+		}
+		m.setAuthResult(msg.result)
+		m.authText = "Signed in as @" + msg.result.User.Login + "."
+		m.authOK, m.screen = true, authResult
+	case authWhoamiMsg:
+		if m.screen != authStarting {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m.authFailure(msg.err)
+		}
+		m.setAuthResult(msg.result)
+		m.screen = profile
+	case authLogoutMsg:
+		if m.screen != loggingOut {
+			return m, nil
+		}
+		m.authUser, m.authDevice, m.authStore = nil, nil, ""
+		if m.canceling {
+			m.err = context.Canceled
+			return m, tea.Quit
+		}
+		m.authText, m.authWarn, m.authOK = "Signed out.", msg.result.Warning, msg.err == nil
+		if msg.err != nil && msg.result.Warning == "" {
+			m.authText = msg.err.Error()
+		}
+		m.screen = authResult
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m.stop()
 		}
-		if m.screen == planning || m.screen == applying {
+		if m.screen == planning || m.screen == applying || m.screen == loggingOut {
 			return m, nil
 		}
 		return m.key(msg)
@@ -58,10 +134,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) authFailure(err error) (tea.Model, tea.Cmd) {
+	m.authText, m.authWarn, m.authOK = err.Error(), "", false
+	if errors.Is(err, auth.ErrUnauthenticated) {
+		m.authText = "Not signed in. Run /login to continue."
+		m.authUser, m.authStore = nil, ""
+	}
+	m.screen = authResult
+	return m, nil
+}
+
+func (m *Model) setAuthResult(result auth.Result) {
+	if result.Authenticated {
+		user := result.User
+		m.authUser = &user
+	}
+	m.authStore, m.authWarn = result.Storage, result.Warning
+}
+
+func scheduleAuthPoll(seconds int) tea.Cmd {
+	if seconds < 1 {
+		seconds = 1
+	}
+	return tea.Tick(time.Duration(seconds)*time.Second, func(time.Time) tea.Msg { return authPollTickMsg{} })
+}
+
 func (m Model) stop() (tea.Model, tea.Cmd) {
 	m.cancel()
 	m.canceling = true
-	if m.screen == applying || m.screen == planning {
+	if m.screen == applying || m.screen == planning || m.screen == loggingOut {
 		return m, nil
 	}
 	m.err = context.Canceled

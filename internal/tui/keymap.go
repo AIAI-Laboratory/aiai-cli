@@ -3,6 +3,7 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 )
 
@@ -51,6 +52,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case help:
 			m.screen = m.previous
 		case about:
+			m.screen, m.cursor = home, 0
+		case authStarting, authWaiting, authResult, profile, logoutConfirmation:
 			m.screen, m.cursor = home, 0
 		case result:
 			return m, tea.Quit
@@ -133,8 +136,27 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if key == "enter" {
 			return m, tea.Quit
 		}
+	case authResult, profile:
+		if key == "enter" {
+			m.screen, m.cursor = home, 0
+		}
+	case logoutConfirmation:
+		switch key {
+		case "up", "down", "j", "k", "tab":
+			m.logoutYes = !m.logoutYes
+		case "enter":
+			if !m.logoutYes {
+				m.screen = home
+				return m, nil
+			}
+			m.screen = loggingOut
+			return m, func() tea.Msg {
+				result, err := m.auth.Logout(m.ctx)
+				return authLogoutMsg{result: result, err: err}
+			}
+		}
 	}
-	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about {
+	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about || m.screen == authWaiting || m.screen == authResult || m.screen == profile {
 		// Synchronize content before scrolling, since View has a value receiver.
 		m.resize()
 		m.viewport.SetContent(m.content())
@@ -182,14 +204,40 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.command.SetValue("")
 		m.cursor = 0
 		m.viewport.GotoTop()
-		switch selected {
-		case 0:
+		switch screens.HomeItems[selected].Name {
+		case "/init":
 			m.screen = selection
-		case 1:
+		case "/login":
+			if m.auth == nil {
+				m.authText, m.authOK, m.screen = "Authentication is unavailable.", false, authResult
+				break
+			}
+			m.screen = authStarting
+			return m, func() tea.Msg {
+				start, err := m.auth.StartLogin(m.ctx, auth.LoginOptions{})
+				return authStartedMsg{start: start, err: err}
+			}
+		case "/whoami":
+			if m.auth == nil {
+				m.authText, m.authOK, m.screen = "Authentication is unavailable.", false, authResult
+				break
+			}
+			m.screen = authStarting
+			return m, func() tea.Msg {
+				result, err := m.auth.WhoAmI(m.ctx)
+				return authWhoamiMsg{result: result, err: err}
+			}
+		case "/logout":
+			if m.authUser == nil {
+				m.authText, m.authOK, m.screen = "Already signed out.", true, authResult
+				break
+			}
+			m.logoutYes, m.screen = false, logoutConfirmation
+		case "/help":
 			m.previous, m.screen = home, help
-		case 2:
+		case "/about":
 			m.screen = about
-		case 3:
+		case "/quit":
 			return m, tea.Quit
 		}
 		return m, nil

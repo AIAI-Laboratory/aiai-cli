@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
@@ -31,6 +32,12 @@ const (
 	result
 	help
 	about
+	authStarting
+	authWaiting
+	authResult
+	profile
+	logoutConfirmation
+	loggingOut
 )
 
 type Options struct {
@@ -44,6 +51,7 @@ type Options struct {
 type Model struct {
 	planner    project.Planner
 	executor   scaffold.Executor
+	auth       auth.Authenticator
 	templates  []templates.TemplateMetadata
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -64,6 +72,13 @@ type Model struct {
 	err        error
 	formError  string
 	canceling  bool
+	authUser   *auth.User
+	authDevice *auth.DeviceAuthorization
+	authStore  string
+	authText   string
+	authWarn   string
+	authOK     bool
+	logoutYes  bool
 }
 
 type (
@@ -75,16 +90,39 @@ type (
 		result scaffold.Result
 		err    error
 	}
-	cancelMsg struct{}
+	cancelMsg     struct{}
+	authCachedMsg struct {
+		result auth.Result
+		err    error
+	}
+	authStartedMsg struct {
+		start auth.LoginStart
+		err   error
+	}
+	authPollMsg struct {
+		poll   auth.PollResult
+		result auth.Result
+		err    error
+	}
+	authPollTickMsg struct{}
+	authWhoamiMsg   struct {
+		result auth.Result
+		err    error
+	}
+	authLogoutMsg struct {
+		result auth.LogoutResult
+		err    error
+	}
 )
 
-func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, opts Options) Model {
+func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, opts Options) Model {
 	ctx, cancel := context.WithCancel(ctx)
 	m := Model{
 		ctx:       ctx,
 		cancel:    cancel,
 		planner:   planner,
 		executor:  executor,
+		auth:      authenticator,
 		templates: metadata,
 		opts:      opts,
 		width:     80,
@@ -119,8 +157,8 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	return m
 }
 
-func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, error) {
-	m := NewModel(ctx, planner, executor, metadata, opts)
+func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, error) {
+	m := NewModel(ctx, planner, executor, metadata, authenticator, opts)
 	defer m.cancel()
 	options := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out), tea.WithoutSignalHandler()}
 	if opts.NoColor {
@@ -144,7 +182,16 @@ func Run(ctx context.Context, planner project.Planner, executor scaffold.Executo
 	return f.result, f.plan, f.err
 }
 
-func (m Model) Init() tea.Cmd { return textinput.Blink }
+func (m Model) Init() tea.Cmd {
+	commands := []tea.Cmd{textinput.Blink}
+	if m.auth != nil && !m.opts.StartInit {
+		commands = append(commands, func() tea.Msg {
+			result, err := m.auth.Cached()
+			return authCachedMsg{result: result, err: err}
+		})
+	}
+	return tea.Batch(commands...)
+}
 
 func (m Model) theme() Theme {
 	return NewTheme(max(1, min(100, m.width-4)), m.opts.NoColor)

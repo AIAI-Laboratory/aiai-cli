@@ -27,6 +27,9 @@ type Command struct {
 
 var HomeItems = []Command{
 	{"/init", "Initialize a Python project"},
+	{"/login", "Sign in with GitHub"},
+	{"/whoami", "Show the signed-in account"},
+	{"/logout", "Remove the current session"},
 	{"/help", "Explore keyboard shortcuts"},
 	{"/about", "About AIAI CLI"},
 	{"/quit", "Return to your terminal"},
