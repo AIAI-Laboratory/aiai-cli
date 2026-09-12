@@ -148,4 +148,9 @@ CI tests on Linux, macOS, and Windows and verifies a generated Python project an
 Husky installation. GoReleaser packages amd64/arm64 binaries and checksums for all
 three platforms. Pushing a `v*` tag triggers the GitHub release workflow.
 
+## Contributing
+
+We welcome contributions! Please check our **[Contributing Guide and Git Flow Workflow](docs/CONTRIBUTING.md)** for branch naming rules, Conventional Commits, local testing instructions, and the PR process.
+
 MIT licensed. No AI provider, network template loading, or external plugins in v1.
+
