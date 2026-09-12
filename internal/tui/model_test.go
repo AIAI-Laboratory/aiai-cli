@@ -14,6 +14,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
 type fakePlanner struct{}
@@ -75,7 +76,7 @@ func press(m Model, code rune) (Model, tea.Cmd) {
 
 func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, nil, Options{})
 	defer m.cancel()
 	m, _ = press(m, tea.KeyEnter)
 	if m.screen != selection {
@@ -119,7 +120,7 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 
 func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
 	defer m.cancel()
 	m, _ = press(m, '?')
 	if m.screen != help {
@@ -154,7 +155,7 @@ func typeCommand(m Model, value string) Model {
 
 func TestCommandPalette(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
 	defer m.cancel()
 	m = typeCommand(m, "/abo")
 	if !strings.Contains(m.content(), "/about") || strings.Contains(m.content(), "/init") {
@@ -197,10 +198,10 @@ func TestCommandPalette(t *testing.T) {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
-		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut} {
+		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
-				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, Options{NoColor: true})
+				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, nil, Options{NoColor: true})
 				defer m.cancel()
 				m.screen = s
 				m.plan = &scaffold.Plan{TargetDir: strings.Repeat("long-path/", 15)}
@@ -209,6 +210,7 @@ func TestViewsFitTerminal(t *testing.T) {
 				m.authUser = &user
 				m.authDevice = &auth.DeviceAuthorization{UserCode: "ABCD-EFGH", VerificationURI: "https://github.com/login/device"}
 				m.authText = "Signed in."
+				m.updateRelease = &updater.Release{TagName: "v0.2.0", Body: "Highlights"}
 				m.focus = 5
 				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				m = next.(Model)
@@ -230,7 +232,7 @@ func TestViewsFitTerminal(t *testing.T) {
 func TestAuthCommandPaletteFlow(t *testing.T) {
 	calls := 0
 	authenticator := &fakeAuth{user: auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}}
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, nil, Options{})
 	defer m.cancel()
 	m = typeCommand(m, "/login")
 	m, cmd := press(m, tea.KeyEnter)
@@ -285,7 +287,7 @@ func TestAuthCommandPaletteFlow(t *testing.T) {
 func TestLogoutCancellationWaitsForLocalCleanup(t *testing.T) {
 	calls := 0
 	authenticator := &fakeAuth{user: auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}}
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, authenticator, nil, Options{})
 	defer m.cancel()
 	user := authenticator.user
 	m.authUser, m.screen, m.logoutYes = &user, logoutConfirmation, true
@@ -308,7 +310,7 @@ func TestLogoutCancellationWaitsForLocalCleanup(t *testing.T) {
 func TestDryRunAndConflictNeverApply(t *testing.T) {
 	for _, conflict := range []bool{false, true} {
 		calls := 0
-		m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{DryRun: true})
+		m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{DryRun: true})
 		m.screen = preview
 		action := scaffold.Create
 		if conflict {
@@ -328,7 +330,7 @@ func TestDryRunAndConflictNeverApply(t *testing.T) {
 
 func TestPreviewScrollAndPartialCancellation(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
 	defer m.cancel()
 	m.screen = preview
 	m.plan = &scaffold.Plan{}
@@ -351,5 +353,170 @@ func TestPreviewScrollAndPartialCancellation(t *testing.T) {
 	m = next.(Model)
 	if cmd == nil || m.err != context.Canceled || len(m.result.Completed) != 1 {
 		t.Fatal("partial result lost")
+	}
+}
+
+type fakeTUIUpdater struct {
+	checkResult *updater.CheckResult
+	checkErr    error
+	applyErr    error
+	postponeErr error
+	applied     bool
+	postponed   bool
+	skipped     bool
+	restarted   bool
+}
+
+func (f *fakeTUIUpdater) CheckForUpdate(ctx context.Context, currentVersion string, force bool) (*updater.CheckResult, error) {
+	if f.checkErr != nil {
+		return nil, f.checkErr
+	}
+	if f.checkResult != nil {
+		return f.checkResult, nil
+	}
+	return &updater.CheckResult{CurrentVersion: currentVersion, HasUpdate: false}, nil
+}
+
+func (f *fakeTUIUpdater) ApplyUpdate(ctx context.Context, release updater.Release) error {
+	f.applied = true
+	return f.applyErr
+}
+
+func (f *fakeTUIUpdater) Postpone(release updater.Release, skip bool) error {
+	f.postponed = true
+	f.skipped = skip
+	return f.postponeErr
+}
+
+func (f *fakeTUIUpdater) Restart() error {
+	f.restarted = true
+	return nil
+}
+
+func TestAutoUpdateFlowPromptAndPostpone(t *testing.T) {
+	calls := 0
+	u := &fakeTUIUpdater{
+		checkResult: &updater.CheckResult{
+			HasUpdate:      true,
+			CurrentVersion: "v0.1.0",
+			LatestRelease: &updater.Release{
+				TagName: "v0.2.0",
+				Version: "0.2.0",
+				Body:    "Great new features",
+			},
+		},
+	}
+
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, u, Options{Version: "v0.1.0"})
+	defer m.cancel()
+
+	// Initially on home
+	if m.screen != home {
+		t.Fatalf("expected home screen, got %d", m.screen)
+	}
+
+	// Receive background updateCheckedMsg
+	next, _ := m.Update(updateCheckedMsg{result: u.checkResult, manual: false})
+	m = next.(Model)
+
+	if m.screen != updatePrompt {
+		t.Fatalf("expected updatePrompt screen, got %d", m.screen)
+	}
+	if m.updateRelease == nil || m.updateRelease.TagName != "v0.2.0" {
+		t.Fatalf("updateRelease not set")
+	}
+
+	// Navigate to "Remind me later" (cursor = 1)
+	m, _ = press(m, tea.KeyDown)
+	if m.cursor != 1 {
+		t.Fatalf("expected cursor=1, got %d", m.cursor)
+	}
+
+	// Press Enter to postpone
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != home {
+		t.Fatalf("expected return to home after postpone, got %d", m.screen)
+	}
+	if !u.postponed || u.skipped {
+		t.Fatalf("expected postponed=true, skipped=false")
+	}
+}
+
+func TestAutoUpdateFlowPromptAndApply(t *testing.T) {
+	calls := 0
+	u := &fakeTUIUpdater{
+		checkResult: &updater.CheckResult{
+			HasUpdate:      true,
+			CurrentVersion: "v0.1.0",
+			LatestRelease: &updater.Release{
+				TagName: "v0.2.0",
+				Version: "0.2.0",
+			},
+		},
+	}
+
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, u, Options{Version: "v0.1.0"})
+	defer m.cancel()
+
+	// Receive background updateCheckedMsg
+	next, _ := m.Update(updateCheckedMsg{result: u.checkResult, manual: false})
+	m = next.(Model)
+
+	// Cursor is 0: "Update now"
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != updating || cmd == nil {
+		t.Fatalf("expected updating screen and cmd, got screen=%d", m.screen)
+	}
+
+	// Execute apply cmd
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+
+	if !u.applied {
+		t.Fatalf("expected ApplyUpdate to be executed")
+	}
+	if m.screen != updateResult || !m.updateResultOK {
+		t.Fatalf("expected updateResult screen, got %d", m.screen)
+	}
+
+	// On updateResult: option 0 is "Restart now"
+	m, quitCmd := press(m, tea.KeyEnter)
+	if quitCmd == nil || !u.restarted {
+		t.Fatalf("expected Restart to be called and tea.Quit")
+	}
+}
+
+func TestManualUpdateCommandFromHome(t *testing.T) {
+	calls := 0
+	u := &fakeTUIUpdater{
+		checkResult: &updater.CheckResult{
+			HasUpdate:      false,
+			CurrentVersion: "v0.2.0",
+			LatestRelease: &updater.Release{
+				TagName: "v0.2.0",
+			},
+		},
+	}
+
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, u, Options{Version: "v0.2.0"})
+	defer m.cancel()
+
+	m = typeCommand(m, "/update")
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != updating || cmd == nil {
+		t.Fatalf("expected updating screen when running /update, got %d", m.screen)
+	}
+
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+
+	if m.screen != updateResult || !m.updateResultOK {
+		t.Fatalf("expected updateResult (up to date), got screen=%d", m.screen)
+	}
+
+	// Press enter or esc to return to home
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != home {
+		t.Fatalf("expected return to home, got %d", m.screen)
 	}
 }

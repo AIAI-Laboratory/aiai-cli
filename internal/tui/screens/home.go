@@ -30,6 +30,7 @@ var HomeItems = []Command{
 	{"/login", "Sign in with GitHub"},
 	{"/whoami", "Show the signed-in account"},
 	{"/logout", "Remove the current session"},
+	{"/update", "Check for updates and upgrade AIAI"},
 	{"/help", "Explore keyboard shortcuts"},
 	{"/about", "About AIAI CLI"},
 	{"/quit", "Return to your terminal"},

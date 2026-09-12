@@ -18,7 +18,7 @@ func (m Model) View() tea.View {
 	m.resize()
 	content := m.content()
 	m.viewport.SetContent(content)
-	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation {
+	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.HasPrefix(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
@@ -100,6 +100,26 @@ func (m Model) content() string {
 			t.Choice("No, keep me signed in", "", !m.logoutYes) + t.Choice("Yes, sign out", "", m.logoutYes)
 	case loggingOut:
 		body = t.Heading("Signing out…", "Revoking the server session and removing local credentials.")
+	case updatePrompt:
+		tag := ""
+		bodyText := ""
+		if m.updateRelease != nil {
+			tag = m.updateRelease.TagName
+			bodyText = m.updateRelease.Body
+		}
+		body = screens.UpdatePrompt(m.opts.Version, tag, bodyText, m.cursor, t)
+	case updating:
+		tag := ""
+		if m.updateRelease != nil {
+			tag = m.updateRelease.TagName
+		}
+		body = screens.Updating(tag, m.updateStep, t)
+	case updateResult:
+		tag := ""
+		if m.updateRelease != nil {
+			tag = m.updateRelease.TagName
+		}
+		body = screens.UpdateResult(tag, m.updateResultOK, m.updateErr, m.updateResultCursor, t)
 	}
 	return lipgloss.NewStyle().Width(t.Width()).Render(body)
 }
@@ -170,6 +190,7 @@ func (m Model) toolbar() string {
 	labels := map[screen]string{
 		help: "Help", about: "About", authStarting: "Authentication", authWaiting: "GitHub login",
 		authResult: "Authentication", profile: "Account", logoutConfirmation: "Sign out", loggingOut: "Sign out",
+		updatePrompt: "Update", updating: "Update", updateResult: "Update",
 	}
 	return t.Muted("AIAI / "+labels[m.screen]) + "\n\n"
 }
@@ -199,7 +220,11 @@ func (m Model) footer() string {
 		hint = "enter or esc back"
 	case logoutConfirmation:
 		hint = "↑/↓ choose · enter confirm · esc back"
-	case planning, applying, authStarting, loggingOut:
+	case updatePrompt:
+		hint = "↑/↓ choose · enter confirm · esc back"
+	case updateResult:
+		hint = "↑/↓ choose · enter confirm · esc back"
+	case planning, applying, authStarting, loggingOut, updating:
 		hint = "ctrl+c cancel safely"
 	}
 	if t.Width() < 48 {

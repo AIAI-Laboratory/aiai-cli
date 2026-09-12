@@ -114,11 +114,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.authText = msg.err.Error()
 		}
 		m.screen = authResult
+	case updateCheckedMsg:
+		if msg.err != nil {
+			if msg.manual {
+				m.updateResultOK = false
+				m.updateErr = msg.err
+				m.screen = updateResult
+				m.viewport.GotoTop()
+			}
+			return m, nil
+		}
+		if msg.result != nil && msg.result.HasUpdate && msg.result.LatestRelease != nil {
+			m.updateRelease = msg.result.LatestRelease
+			m.cursor = 0
+			if m.screen == home || msg.manual {
+				m.screen = updatePrompt
+				m.viewport.GotoTop()
+			}
+			return m, nil
+		}
+		if msg.manual {
+			m.updateResultOK = true
+			m.updateRelease = nil
+			m.updateErr = nil
+			m.screen = updateResult
+			m.viewport.GotoTop()
+		}
+	case updateFinishedMsg:
+		m.updateErr = msg.err
+		m.updateResultOK = msg.err == nil
+		m.updateResultCursor = 0
+		m.screen = updateResult
+		m.viewport.GotoTop()
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m.stop()
 		}
-		if m.screen == planning || m.screen == applying || m.screen == loggingOut {
+		if m.screen == planning || m.screen == applying || m.screen == loggingOut || m.screen == updating {
 			return m, nil
 		}
 		return m.key(msg)
