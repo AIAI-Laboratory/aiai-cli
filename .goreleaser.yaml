@@ -18,7 +18,9 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 archives:
-  - formats: [tar.gz]
+  - id: default
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
