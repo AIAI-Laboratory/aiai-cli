@@ -34,6 +34,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "esc" {
 		switch m.screen {
 		case home:
+			if m.command.Value() != "" {
+				m.command.SetValue("")
+				m.cursor = 0
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			return m, tea.Quit
 		case selection:
 			m.screen, m.cursor = home, 0
@@ -47,7 +53,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case help:
 			m.screen = m.previous
 		case about:
-			m.screen = home
+			m.screen, m.cursor = home, 0
 		case result:
 			return m, tea.Quit
 		}
@@ -55,11 +61,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.screen {
-	case home, selection:
-		count := len(screens.HomeItems)
-		if m.screen == selection {
-			count = len(m.templates)
-		}
+	case home:
+		return m.homeKey(msg)
+	case selection:
+		count := len(m.templates)
 		if count == 0 {
 			return m, nil
 		}
@@ -69,21 +74,9 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			m.cursor = (m.cursor + 1) % count
 		case "enter":
-			if m.screen == selection {
-				m.opts.Request.TemplateID = m.templates[m.cursor].ID
-				m.screen = form
-				return m, m.setFocus(0)
-			}
-			switch m.cursor {
-			case 0:
-				m.screen, m.cursor = selection, 0
-			case 1:
-				m.previous, m.screen = home, help
-			case 2:
-				m.screen = about
-			case 3:
-				return m, tea.Quit
-			}
+			m.opts.Request.TemplateID = m.templates[m.cursor].ID
+			m.screen = form
+			return m, m.setFocus(0)
 		}
 	case form:
 		switch key {
@@ -145,6 +138,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about {
 		// Synchronize content before scrolling, since View has a value receiver.
+		m.resize()
 		m.viewport.SetContent(m.content())
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -170,4 +164,68 @@ func (m Model) prepare() (tea.Model, tea.Cmd) {
 	m.formError = ""
 	m.screen = planning
 	return m, func() tea.Msg { p, err := m.planner.Plan(m.ctx, req); return plannedMsg{p, err} }
+}
+
+func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	matches := screens.MatchingCommands(m.command.Value())
+	key := msg.String()
+	// Keep j/k shortcuts until the user starts typing a command filter.
+	if m.command.Value() == "" {
+		if key == "j" {
+			key = "down"
+		}
+		if key == "k" {
+			key = "up"
+		}
+	}
+	switch key {
+	case "up", "down":
+		if len(matches) > 0 {
+			delta := 1
+			if key == "up" {
+				delta = -1
+			}
+			m.cursor = (m.cursor + delta + len(matches)) % len(matches)
+		}
+		return m, nil
+	case "tab":
+		if len(matches) > 0 {
+			m.command.SetValue(screens.HomeItems[matches[m.cursor]].Name)
+			m.command.CursorEnd()
+			m.cursor = 0
+		}
+		return m, nil
+	case "enter":
+		if len(matches) == 0 {
+			return m, nil
+		}
+		selected := matches[m.cursor]
+		m.command.SetValue("")
+		m.cursor = 0
+		m.viewport.GotoTop()
+		switch selected {
+		case 0:
+			m.screen = selection
+		case 1:
+			m.previous, m.screen = home, help
+		case 2:
+			m.screen = about
+		case 3:
+			return m, tea.Quit
+		}
+		return m, nil
+	default:
+		return m.updateCommand(msg)
+	}
+}
+
+func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.command.Value()
+	var cmd tea.Cmd
+	m.command, cmd = m.command.Update(msg)
+	if before != m.command.Value() {
+		m.cursor = 0
+		m.viewport.GotoTop()
+	}
+	return m, cmd
 }

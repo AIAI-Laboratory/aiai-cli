@@ -4,6 +4,8 @@ A deterministic project scaffolder with a Cobra command interface and a Bubble
 Tea terminal UI. Templates are compiled into the binary; generation works offline
 and does not run subprocesses or install dependencies.
 
+![AIAI CLI terminal interface](docs/terminal.svg)
+
 ## Installation
 
 ### Quick install (recommended)
@@ -25,10 +27,17 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 ./bin/aiai
 ```
 
-The home menu provides **Project → Initialize Python Project**, keyboard help,
-and version information. The wizard selects a template, collects project fields,
-previews file operations, and asks for confirmation. Use arrows or `j/k` in menus,
-Tab in forms, Enter to select, Esc to return, and Ctrl+C to cancel. `?` opens help.
+The home screen provides a searchable command menu: **/init**, **/help**,
+**/about**, and **/quit**. Type `/` to filter commands, Tab to complete, and
+Enter to select. Esc clears the filter, then exits. Arrows navigate the menu;
+`j/k` also work when the command field is empty.
+
+The wizard selects a template, collects project fields, previews file operations,
+and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
+select, Esc to return, and Ctrl+C to cancel. `?` opens help. The layout adapts to
+smaller terminals and keeps the focused field visible. The AIAI mark is rendered
+with terminal block characters; a scalable version lives in
+[assets/aiai-logo.svg](assets/aiai-logo.svg).
 
 ```bash
 aiai init python my-project --dry-run
