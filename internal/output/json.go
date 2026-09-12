@@ -6,6 +6,7 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
 type Error struct {
@@ -21,6 +22,14 @@ type Auth struct {
 	Warning         string     `json:"warning,omitempty"`
 }
 
+type Update struct {
+	CurrentVersion string           `json:"current_version"`
+	LatestVersion  string           `json:"latest_version,omitempty"`
+	HasUpdate      bool             `json:"has_update"`
+	Action         string           `json:"action"`
+	Release        *updater.Release `json:"release,omitempty"`
+}
+
 // Envelope is the versioned machine-output contract. File bodies are omitted.
 type Envelope struct {
 	SchemaVersion int              `json:"schema_version"`
@@ -30,6 +39,7 @@ type Envelope struct {
 	Error         *Error           `json:"error,omitempty"`
 	Version       string           `json:"version,omitempty"`
 	Auth          *Auth            `json:"auth,omitempty"`
+	Update        *Update          `json:"update,omitempty"`
 }
 
 func JSON(w io.Writer, e Envelope) error {

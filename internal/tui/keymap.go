@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
@@ -53,7 +55,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen = m.previous
 		case about:
 			m.screen, m.cursor = home, 0
-		case authStarting, authWaiting, authResult, profile, logoutConfirmation:
+		case authStarting, authWaiting, authResult, profile, logoutConfirmation, updatePrompt, updateResult:
 			m.screen, m.cursor = home, 0
 		case result:
 			return m, tea.Quit
@@ -155,8 +157,59 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return authLogoutMsg{result: result, err: err}
 			}
 		}
+	case updatePrompt:
+		switch key {
+		case "up", "k":
+			m.cursor = (m.cursor + 2) % 3
+		case "down", "j", "tab":
+			m.cursor = (m.cursor + 1) % 3
+		case "enter":
+			if m.updateRelease == nil {
+				m.screen, m.cursor = home, 0
+				return m, nil
+			}
+			switch m.cursor {
+			case 0:
+				m.screen = updating
+				m.updateStep = "Downloading update from GitHub…"
+				release := *m.updateRelease
+				return m, func() tea.Msg {
+					err := m.updater.ApplyUpdate(m.ctx, release)
+					return updateFinishedMsg{err: err}
+				}
+			case 1:
+				if m.updater != nil {
+					_ = m.updater.Postpone(*m.updateRelease, false)
+				}
+				m.screen, m.cursor = home, 0
+			case 2:
+				if m.updater != nil {
+					_ = m.updater.Postpone(*m.updateRelease, true)
+				}
+				m.screen, m.cursor = home, 0
+			}
+		}
+	case updateResult:
+		if m.updateResultOK {
+			switch key {
+			case "up", "down", "j", "k", "tab":
+				m.updateResultCursor = (m.updateResultCursor + 1) % 2
+			case "enter":
+				if m.updateResultCursor == 0 {
+					if m.updater != nil {
+						_ = m.updater.Restart()
+					}
+					return m, tea.Quit
+				}
+				return m, tea.Quit
+			}
+		} else {
+			if key == "enter" {
+				m.screen, m.cursor = home, 0
+			}
+		}
 	}
-	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about || m.screen == authWaiting || m.screen == authResult || m.screen == profile {
+	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about || m.screen == authWaiting || m.screen == authResult || m.screen == profile || m.screen == updatePrompt || m.screen == updateResult {
 		// Synchronize content before scrolling, since View has a value receiver.
 		m.resize()
 		m.viewport.SetContent(m.content())
@@ -233,6 +286,19 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 			m.logoutYes, m.screen = false, logoutConfirmation
+		case "/update":
+			if m.updater == nil {
+				m.updateResultOK = false
+				m.updateErr = errors.New("updater is unavailable")
+				m.screen = updateResult
+				break
+			}
+			m.screen = updating
+			m.updateStep = "Checking GitHub for updates…"
+			return m, func() tea.Msg {
+				res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, true)
+				return updateCheckedMsg{result: res, err: err, manual: true}
+			}
 		case "/help":
 			m.previous, m.screen = home, help
 		case "/about":

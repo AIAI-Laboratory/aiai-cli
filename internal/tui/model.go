@@ -17,6 +17,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
 type screen int
@@ -38,6 +39,9 @@ const (
 	profile
 	logoutConfirmation
 	loggingOut
+	updatePrompt
+	updating
+	updateResult
 )
 
 type Options struct {
@@ -49,36 +53,42 @@ type Options struct {
 }
 
 type Model struct {
-	planner    project.Planner
-	executor   scaffold.Executor
-	auth       auth.Authenticator
-	templates  []templates.TemplateMetadata
-	ctx        context.Context
-	cancel     context.CancelFunc
-	opts       Options
-	screen     screen
-	previous   screen
-	cursor     int
-	focus      int
-	confirmYes bool
-	inputs     []textinput.Model
-	command    textinput.Model
-	workspace  string
-	viewport   viewport.Model
-	width      int
-	height     int
-	plan       *scaffold.Plan
-	result     *scaffold.Result
-	err        error
-	formError  string
-	canceling  bool
-	authUser   *auth.User
-	authDevice *auth.DeviceAuthorization
-	authStore  string
-	authText   string
-	authWarn   string
-	authOK     bool
-	logoutYes  bool
+	planner            project.Planner
+	executor           scaffold.Executor
+	auth               auth.Authenticator
+	updater            updater.Service
+	templates          []templates.TemplateMetadata
+	ctx                context.Context
+	cancel             context.CancelFunc
+	opts               Options
+	screen             screen
+	previous           screen
+	cursor             int
+	focus              int
+	confirmYes         bool
+	inputs             []textinput.Model
+	command            textinput.Model
+	workspace          string
+	viewport           viewport.Model
+	width              int
+	height             int
+	plan               *scaffold.Plan
+	result             *scaffold.Result
+	err                error
+	formError          string
+	canceling          bool
+	authUser           *auth.User
+	authDevice         *auth.DeviceAuthorization
+	authStore          string
+	authText           string
+	authWarn           string
+	authOK             bool
+	logoutYes          bool
+	updateRelease      *updater.Release
+	updateStep         string
+	updateErr          error
+	updateResultOK     bool
+	updateResultCursor int
 }
 
 type (
@@ -113,9 +123,17 @@ type (
 		result auth.LogoutResult
 		err    error
 	}
+	updateCheckedMsg struct {
+		result *updater.CheckResult
+		err    error
+		manual bool
+	}
+	updateFinishedMsg struct {
+		err error
+	}
 )
 
-func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, opts Options) Model {
+func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, opts Options) Model {
 	ctx, cancel := context.WithCancel(ctx)
 	m := Model{
 		ctx:       ctx,
@@ -123,6 +141,7 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 		planner:   planner,
 		executor:  executor,
 		auth:      authenticator,
+		updater:   updaterService,
 		templates: metadata,
 		opts:      opts,
 		width:     80,
@@ -157,8 +176,8 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	return m
 }
 
-func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, error) {
-	m := NewModel(ctx, planner, executor, metadata, authenticator, opts)
+func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, error) {
+	m := NewModel(ctx, planner, executor, metadata, authenticator, updaterService, opts)
 	defer m.cancel()
 	options := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out), tea.WithoutSignalHandler()}
 	if opts.NoColor {
@@ -188,6 +207,12 @@ func (m Model) Init() tea.Cmd {
 		commands = append(commands, func() tea.Msg {
 			result, err := m.auth.Cached()
 			return authCachedMsg{result: result, err: err}
+		})
+	}
+	if m.updater != nil && !m.opts.StartInit {
+		commands = append(commands, func() tea.Msg {
+			res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, false)
+			return updateCheckedMsg{result: res, err: err, manual: false}
 		})
 	}
 	return tea.Batch(commands...)

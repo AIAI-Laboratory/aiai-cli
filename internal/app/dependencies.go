@@ -8,6 +8,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
 func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, injectedGitHubClientID string) (command.Dependencies, error) {
@@ -29,5 +30,16 @@ func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, 
 		UserAgent: "aiai-cli/" + version,
 	}
 	authService := auth.NewService(client, credentialStore, apiURL)
-	return command.Dependencies{Planner: project.Initializer{Engine: scaffold.Engine{Registry: r}}, Executor: scaffold.FileExecutor{}, Registry: r, Auth: authService, In: in, Out: out, Err: errOut, Version: version}, nil
+	updaterService, _ := updater.NewService("", "", "aiai-cli/"+version, "")
+	return command.Dependencies{
+		Planner:  project.Initializer{Engine: scaffold.Engine{Registry: r}},
+		Executor: scaffold.FileExecutor{},
+		Registry: r,
+		Auth:     authService,
+		Updater:  updaterService,
+		In:       in,
+		Out:      out,
+		Err:      errOut,
+		Version:  version,
+	}, nil
 }
