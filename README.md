@@ -136,10 +136,10 @@ arbitrary filesystem helpers. YAML uses `go.yaml.in/yaml/v3` with unknown-field
 rejection. Bubble Tea, Bubbles, and Lip Gloss use their v2 APIs.
 
 ```bash
+make fmt            # format code and imports (goimports & gofumpt)
 go test -race ./...
 go vet ./...
-go run mvdan.cc/gofumpt@v0.9.2 -w .
-golangci-lint run
+make lint           # runs golangci-lint
 govulncheck ./...
 goreleaser check
 ```

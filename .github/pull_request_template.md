@@ -33,7 +33,7 @@ Fixes / Closes #(issue)
 
 Describe the tests run to verify the changes:
 - [ ] Unit tests: `go test -race ./...`
-- [ ] Formatting: `go run mvdan.cc/gofumpt@v0.9.2 -w .`
+- [ ] Formatting: `make fmt-check` (or `./scripts/fmt.sh`)
 - [ ] Linting: `golangci-lint run`
 - [ ] Vulnerability audit: `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
 - [ ] Template verification (if template modified): `go run ./cmd/aiai init ...`

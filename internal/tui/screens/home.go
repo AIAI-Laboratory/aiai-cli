@@ -2,6 +2,24 @@ package screens
 
 import "strings"
 
+// Theme interface defines the styling contract required by screens without
+// coupling back to internal/tui, preventing circular import dependencies.
+type Theme interface {
+	Width() int
+	NoColor() bool
+	Accent(text string) string
+	Brand(text string) string
+	Muted(text string) string
+	Good(text string) string
+	Warn(text string) string
+	Title(text string) string
+	Rule() string
+	Heading(title, subtitle string) string
+	Keys(hint string) string
+	Choice(label, description string, selected bool) string
+	Step(current int) string
+}
+
 type Command struct {
 	Name        string
 	Description string

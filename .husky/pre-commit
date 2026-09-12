@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+
+echo "==> [Husky] Running pre-commit checks..."
+
+# 1. Check imports and code formatting
+./scripts/fmt.sh --check
+
+# 2. Run go vet
+go vet ./...
+
+# 3. Run tests with race detector
+go test -race ./...

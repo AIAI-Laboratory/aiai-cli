@@ -149,18 +149,22 @@ Ensure you have the following installed locally:
 - **Go**: 1.27+ (`go version`)
 - **Git**: 2.30+
 - **golangci-lint**: latest v2 (`golangci-lint --version`)
-- **gofumpt**: v0.9.2 (`go install mvdan.cc/gofumpt@v0.9.2`)
-- **Node.js**: 22+ & **Corepack** (for generated Python template verification)
+- **goimports**: managed via Go tool directives in `go.mod` (or `go install golang.org/x/tools/cmd/goimports@latest`)
+- **gofumpt**: v0.9.2, managed via Go tool directives in `go.mod` (or `go install mvdan.cc/gofumpt@v0.9.2`)
+- **Node.js**: 22+ & **npm** / **Corepack** (for Husky Git hooks and generated Python template verification)
 - **uv**: Astral's package manager for Python testing
 
-Clone the repository and verify the build:
+Clone the repository and initialize the project:
 
 ```bash
 git clone https://github.com/AIAI-Laboratory/aiai-cli.git
 cd aiai-cli
 
+# Initialize Husky Git hooks
+make setup
+
 # Verify build
-go build -trimpath -o bin/aiai ./cmd/aiai
+make build
 ./bin/aiai version
 ```
 
@@ -192,8 +196,9 @@ Make your changes following the existing architecture:
 Before committing, run the project verification suite:
 
 ```bash
-# 1. Format code with gofumpt
-go run mvdan.cc/gofumpt@v0.9.2 -w .
+# 1. Format code and imports (goimports & gofumpt)
+make fmt          # or: ./scripts/fmt.sh
+make fmt-check    # or: ./scripts/fmt.sh --check
 
 # 2. Run Go vet
 go vet ./...
@@ -202,7 +207,7 @@ go vet ./...
 go test -race -v ./...
 
 # 4. Run linter
-golangci-lint run
+make lint         # or: golangci-lint run
 
 # 5. Check for known vulnerabilities
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
@@ -342,7 +347,7 @@ main (v1.2.0) ───► hotfix/fix-panic ───► [Fix & Test] ───�
 Before submitting your PR, verify:
 
 - [ ] Target branch is set correctly (`develop` for features/bugfixes, `main` for hotfix/release).
-- [ ] Code follows project conventions and passes `go run mvdan.cc/gofumpt@v0.9.2 -w .`.
+- [ ] Code follows project conventions and passes formatting (`make fmt-check` or `./scripts/fmt.sh`).
 - [ ] Linter passes with zero warnings (`golangci-lint run`).
 - [ ] All unit and integration tests pass (`go test -race ./...`).
 - [ ] Any modified templates have valid manifests and pass verification.

@@ -32,9 +32,8 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-      - run: go run mvdan.cc/gofumpt@v0.9.2 -d .
-      - name: Check formatting
-        run: test -z "$(go run mvdan.cc/gofumpt@v0.9.2 -l .)"
+      - name: Check formatting (goimports and gofumpt)
+        run: ./scripts/fmt.sh --check
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - uses: goreleaser/goreleaser-action@v6
         with:

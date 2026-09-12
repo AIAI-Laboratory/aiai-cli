@@ -8,12 +8,13 @@ Please refer to our comprehensive contribution and Git Flow workflow documentati
 
 ## Quick Reference
 
+- **Setup Git hooks**: `make setup` (or `npm install`)
 - **Default base branch for PRs**: `develop`
 - **Branch naming**: `feature/<id>-<desc>`, `bugfix/<id>-<desc>`, `hotfix/<desc>`
 - **Commit style**: [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:`, etc.)
 - **Format & Lint**:
   ```bash
-  go run mvdan.cc/gofumpt@v0.9.2 -w .
-  golangci-lint run
+  make fmt            # or ./scripts/fmt.sh (runs goimports and gofumpt)
+  make lint           # runs golangci-lint
   go test -race ./...
   ```
