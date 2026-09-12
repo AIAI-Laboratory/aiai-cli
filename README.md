@@ -4,9 +4,21 @@ A deterministic project scaffolder with a Cobra command interface and a Bubble
 Tea terminal UI. Templates are compiled into the binary; generation works offline
 and does not run subprocesses or install dependencies.
 
-## Build and run
+## Installation
 
-Go 1.27+ is required to build from source. Released binaries require no Go runtime.
+### Quick install (recommended)
+
+Install the pre-built standalone binary without requiring Go or any runtime:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AIAI-Laboratory/aiai-cli/main/install.sh | bash
+```
+
+The script automatically detects your OS and architecture (macOS/Linux on ARM64/AMD64) and places `aiai` into `~/.local/bin`.
+
+### Build from source (developers)
+
+Go 1.27+ is required to build from source:
 
 ```bash
 go build -trimpath -o bin/aiai ./cmd/aiai
