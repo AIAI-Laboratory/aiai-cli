@@ -2,7 +2,8 @@
 
 A deterministic project scaffolder with a Cobra command interface and a Bubble
 Tea terminal UI. Templates are compiled into the binary; generation works offline
-and does not run subprocesses or install dependencies.
+and does not run subprocesses or install dependencies. Optional GitHub sign-in
+provides an AIAI session for online features without changing the offline workflow.
 
 ![AIAI CLI terminal interface](docs/terminal.svg)
 
@@ -27,10 +28,10 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 ./bin/aiai
 ```
 
-The home screen provides a searchable command menu: **/init**, **/help**,
-**/about**, and **/quit**. Type `/` to filter commands, Tab to complete, and
-Enter to select. Esc clears the filter, then exits. Arrows navigate the menu;
-`j/k` also work when the command field is empty.
+The home screen provides a searchable command menu including **/init**, **/login**,
+**/whoami**, **/logout**, **/help**, **/about**, and **/quit**. Type `/` to filter
+commands, Tab to complete, and Enter to select. Esc clears the filter, then exits.
+Arrows navigate the menu; `j/k` also work when the command field is empty.
 
 The wizard selects a template, collects project fields, previews file operations,
 and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
@@ -44,6 +45,9 @@ aiai init python my-project --dry-run
 aiai init python my-project --yes
 aiai init python . --name my-project --package my_project --yes
 aiai init python my-project --target /path/to/project --yes --json
+aiai login
+aiai whoami
+aiai logout
 aiai version
 ```
 
@@ -57,6 +61,28 @@ and distribution name; the default Python package is `my_project`. `.` uses the
 current directory. `--target` overrides the destination; `--name` overrides project
 metadata; `--package` overrides the import name. With only `--name`, the normalized
 name becomes the destination. Explicit target paths may be absolute.
+
+## Optional GitHub sign-in
+
+Use `aiai login` to authenticate an AIAI account through GitHub Device Flow. The
+command prints a verification URL and one-time code, tries to open the browser,
+and waits for authorization. Use `--no-browser` on remote or headless machines.
+An existing session is reused; `--force` starts a replacement login and preserves
+the old credential if the new flow fails.
+
+Authentication communicates directly with GitHub's Device Flow API and requires
+no client secret in the binary. The CLI requests only public profile scope
+(`read:user`) and stores credentials securely in macOS Keychain, Windows Credential
+Manager, or Linux Secret Service. If the OS keyring is unavailable, it warns and
+falls back to `credentials.json` under the platform user config directory with
+owner-only permissions.
+
+To enable GitHub login, configure `AIAI_GITHUB_CLIENT_ID` (or `GITHUB_CLIENT_ID`)
+with a registered GitHub OAuth App (with Device Flow enabled). Release builds can
+also receive this ID at link time via `-X main.githubClientID=...`. See
+[the authentication architecture](docs/authentication.md) for details. Login remains
+completely optional: project initialization and all offline commands work without
+a GitHub account or network connection.
 
 ## Python template
 
@@ -103,11 +129,12 @@ no automatic backup. `--force` applies only to files listed by the template.
 ## Output contract
 
 `--json` emits one object with `schema_version: 1`, `status`, and optional `plan`,
-`result`, `error`, and `version` fields. A plan contains destination, template ID
-and version, warnings, and sorted operations (`path`, `action`, numeric `mode`).
+`result`, `auth`, `error`, and `version` fields. A plan contains destination,
+template ID and version, warnings, and sorted operations (`path`, `action`, numeric `mode`).
 File bodies and internal hashes are excluded. Results report completed and skipped
 paths plus setup commands. Errors include a numeric exit code and message, with
 partial results when generation stopped. Human prompts and verbose logs use stderr.
+Auth output never contains access, refresh, or GitHub tokens.
 `--no-color` and `NO_COLOR` disable TUI colors.
 
 | Exit | Meaning |
@@ -115,7 +142,7 @@ partial results when generation stopped. Human prompts and verbose logs use stde
 | 0 | Success or conflict-free dry run |
 | 2 | Usage or validation error |
 | 3 | File conflict or stale preview |
-| 4 | Filesystem or terminal execution failure |
+| 4 | Filesystem, terminal, credential-store, or remote API failure |
 | 130 | Cancellation |
 
 ## Architecture and development
@@ -125,7 +152,8 @@ partial results when generation stopped. Human prompts and verbose logs use stde
 executor. The project layer validates names; the scaffold layer renders, plans,
 and applies files. `internal/template` reads strict manifests through a registry;
 `templates/embed.go` embeds the assets including dotfiles and Python underscored
-modules. `internal/platform` owns terminal detection and filesystem containment.
+modules. `internal/platform` owns terminal detection and filesystem containment;
+`internal/auth` owns the AIAI API session and credential persistence.
 All service interfaces are internal; there is no public Go SDK.
 
 Add a template under `templates/`, declare every file and scalar variable in its
@@ -153,4 +181,4 @@ three platforms. Pushing a `v*` tag triggers the GitHub release workflow.
 We welcome contributions! Please check our **[Contributing Guide and Git Flow Workflow](docs/CONTRIBUTING.md)** for branch naming rules, Conventional Commits, local testing instructions, and the PR process.
 
 MIT licensed. No AI provider, network template loading, or external plugins in v1.
-
+Only explicit authentication and future online commands contact the AIAI API.

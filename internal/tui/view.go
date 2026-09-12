@@ -79,6 +79,27 @@ func (m Model) content() string {
 		body = screens.Help(t)
 	case about:
 		body = t.Heading("Small tool. Solid foundations.", "AIAI CLI · "+m.opts.Version) + "Deterministic project scaffolding.\nEmbedded templates. Offline generation.\n\n" + t.Muted("Choose a template, review the plan, and start building.")
+	case authStarting:
+		body = t.Heading("Connecting to AIAI…", "Preparing your authentication session.")
+	case authWaiting:
+		if m.authDevice == nil {
+			body = t.Heading("Connecting to AIAI…", "Preparing your authentication session.")
+		} else {
+			body = screens.DeviceLogin(*m.authDevice, t)
+		}
+	case authResult:
+		body = screens.AuthResult(m.authText, m.authWarn, m.authOK, t)
+	case profile:
+		if m.authUser == nil {
+			body = screens.AuthResult("Not signed in. Run /login to continue.", "", false, t)
+		} else {
+			body = screens.AuthProfile(*m.authUser, m.authStore, t)
+		}
+	case logoutConfirmation:
+		body = t.Heading("Sign out?", "This removes the AIAI credential stored on this device.") +
+			t.Choice("No, keep me signed in", "", !m.logoutYes) + t.Choice("Yes, sign out", "", m.logoutYes)
+	case loggingOut:
+		body = t.Heading("Signing out…", "Revoking the server session and removing local credentials.")
 	}
 	return lipgloss.NewStyle().Width(t.Width()).Render(body)
 }
@@ -117,8 +138,12 @@ func (m Model) header() string {
 	if m.height < 22 || t.Width() < 55 || (m.screen != home && m.screen != about) {
 		return name + "\n" + t.Rule()
 	}
+	authStatus := "Not signed in"
+	if m.authUser != nil {
+		authStatus = "Signed in as @" + m.authUser.Login
+	}
 	detail := "\n" + name + "\n" + t.Muted("Your next project starts here.") + "\n\n" +
-		t.Muted(m.workspace) + "\n" + t.Good("●") + t.Muted(" Offline · Embedded templates")
+		t.Muted(m.workspace) + "\n" + t.Good("●") + t.Muted(" Offline templates · "+authStatus)
 	detail = lipgloss.NewStyle().Width(max(1, t.Width()-24)).MaxWidth(max(1, t.Width()-24)).Render(detail)
 	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.logo(), "    ", detail) + "\n\n" + t.Rule()
 }
@@ -142,7 +167,11 @@ func (m Model) toolbar() string {
 	if step >= 0 {
 		return t.Step(step) + "\n\n"
 	}
-	return t.Muted("AIAI / "+map[screen]string{help: "Help", about: "About"}[m.screen]) + "\n\n"
+	labels := map[screen]string{
+		help: "Help", about: "About", authStarting: "Authentication", authWaiting: "GitHub login",
+		authResult: "Authentication", profile: "Account", logoutConfirmation: "Sign out", loggingOut: "Sign out",
+	}
+	return t.Muted("AIAI / "+labels[m.screen]) + "\n\n"
 }
 
 func (m Model) footer() string {
@@ -164,7 +193,13 @@ func (m Model) footer() string {
 		hint = "↑/↓ scroll · enter finish"
 	case help, about:
 		hint = "↑/↓ scroll · esc back"
-	case planning, applying:
+	case authWaiting:
+		hint = "esc back · ctrl+c cancel"
+	case authResult, profile:
+		hint = "enter or esc back"
+	case logoutConfirmation:
+		hint = "↑/↓ choose · enter confirm · esc back"
+	case planning, applying, authStarting, loggingOut:
 		hint = "ctrl+c cancel safely"
 	}
 	if t.Width() < 48 {

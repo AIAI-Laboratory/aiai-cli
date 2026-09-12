@@ -8,11 +8,15 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/app"
 )
 
-var version = "dev"
+var (
+	version        = "dev"
+	apiURL         string
+	githubClientID string
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	code := app.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, version)
+	code := app.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, version, apiURL, githubClientID)
 	stop()
 	os.Exit(code)
 }

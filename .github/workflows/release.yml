@@ -15,9 +15,14 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
+      - name: Validate authentication API URL
+        env:
+          AIAI_API_URL: ${{ vars.AIAI_API_URL }}
+        run: test -n "$AIAI_API_URL"
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AIAI_API_URL: ${{ vars.AIAI_API_URL }}

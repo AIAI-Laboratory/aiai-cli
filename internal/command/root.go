@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
@@ -27,6 +28,7 @@ type Dependencies struct {
 	Out      io.Writer
 	Err      io.Writer
 	Version  string
+	Auth     auth.Authenticator
 	// Interactive can be injected by tests; production uses actual descriptors.
 	Interactive func() bool
 }
@@ -40,6 +42,7 @@ type state struct {
 	result  *scaffold.Result
 	version string
 	status  string
+	auth    *output.Auth
 }
 
 func Run(ctx context.Context, args []string, deps Dependencies) int {
@@ -51,7 +54,7 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 	err := root.ExecuteContext(ctx)
 	code := ExitCode(err)
 	if s.json {
-		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version}
+		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth}
 		if err != nil {
 			e.Status = "error"
 			e.Error = &output.Error{Code: code, Message: err.Error()}
@@ -78,6 +81,8 @@ func ExitCode(err error) int {
 	case errors.Is(err, scaffold.ErrConflict):
 		return 3
 	case errors.Is(err, scaffold.ErrExecution):
+		return 4
+	case errors.Is(err, auth.ErrIO):
 		return 4
 	default:
 		return 2
@@ -121,7 +126,7 @@ func (s *state) root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&s.json, "json", false, "Emit one JSON envelope (schema version 1)")
 	root.PersistentFlags().BoolVar(&s.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&s.verbose, "verbose", false, "Write diagnostic logs to stderr")
-	root.AddCommand(s.initCommand(), s.versionCommand())
+	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand())
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		s.status = "help"
@@ -157,7 +162,7 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
 	}
 	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version}
-	result, plan, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.In, s.human(), opts)
+	result, plan, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.In, s.human(), opts)
 	s.plan, s.result = plan, result
 	if result != nil && err == nil && !s.json {
 		fmt.Fprint(s.human(), output.ResultText(*result))

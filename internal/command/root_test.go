@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
@@ -14,6 +15,10 @@ import (
 )
 
 func run(t *testing.T, args []string, interactive bool, input string) (int, string, string) {
+	return runWithAuth(t, args, interactive, input, nil)
+}
+
+func runWithAuth(t *testing.T, args []string, interactive bool, input string, authenticator auth.Authenticator) (int, string, string) {
 	t.Helper()
 	r, err := templates.Embedded()
 	if err != nil {
@@ -28,6 +33,7 @@ func run(t *testing.T, args []string, interactive bool, input string) (int, stri
 		Out:         &out,
 		Err:         &stderr,
 		Version:     "test",
+		Auth:        authenticator,
 		Interactive: func() bool { return interactive },
 	}
 	code := Run(context.Background(), args, deps)

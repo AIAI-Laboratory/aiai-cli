@@ -16,7 +16,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X main.version={{.Version}} -X main.apiURL={{.Env.AIAI_API_URL}}
 archives:
   - id: default
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
