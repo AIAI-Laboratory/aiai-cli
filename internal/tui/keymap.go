@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"path/filepath"
-
 	tea "charm.land/bubbletea/v2"
-	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
+
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 )
 
@@ -147,25 +145,6 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) prepare() (tea.Model, tea.Cmd) {
-	req := m.opts.Request
-	req.ProjectName, req.TargetDir, req.PackageName = m.inputs[0].Value(), m.inputs[1].Value(), m.inputs[2].Value()
-	if req.TargetDir == "" && req.ProjectName != "" {
-		name, err := project.NormalizeName(req.ProjectName)
-		if err != nil {
-			m.formError = err.Error()
-			return m, nil
-		}
-		req.TargetDir = filepath.Join(".", name)
-	}
-	if req.TargetDir == "" {
-		req.TargetDir = "."
-	}
-	m.formError = ""
-	m.screen = planning
-	return m, func() tea.Msg { p, err := m.planner.Plan(m.ctx, req); return plannedMsg{p, err} }
-}
-
 func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	matches := screens.MatchingCommands(m.command.Value())
 	key := msg.String()
@@ -217,15 +196,4 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m.updateCommand(msg)
 	}
-}
-
-func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
-	before := m.command.Value()
-	var cmd tea.Cmd
-	m.command, cmd = m.command.Update(msg)
-	if before != m.command.Value() {
-		m.cursor = 0
-		m.viewport.GotoTop()
-	}
-	return m, cmd
 }

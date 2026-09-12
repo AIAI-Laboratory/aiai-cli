@@ -1,4 +1,4 @@
-package screens
+package tui
 
 import (
 	"fmt"
@@ -10,13 +10,20 @@ import (
 // Theme leaves the terminal background and normal foreground untouched so the
 // interface works with the user's own terminal palette.
 type Theme struct {
-	Width   int
-	NoColor bool
+	width   int
+	noColor bool
 }
+
+func NewTheme(width int, noColor bool) Theme {
+	return Theme{width: width, noColor: noColor}
+}
+
+func (t Theme) Width() int    { return t.width }
+func (t Theme) NoColor() bool { return t.noColor }
 
 func (t Theme) paint(text, color string, bold bool) string {
 	s := lipgloss.NewStyle().Bold(bold)
-	if !t.NoColor {
+	if !t.noColor {
 		s = s.Foreground(lipgloss.Color(color))
 	}
 	return s.Render(text)
@@ -28,7 +35,7 @@ func (t Theme) Muted(text string) string  { return t.paint(text, "#808080", fals
 func (t Theme) Good(text string) string   { return t.paint(text, "#36A879", false) }
 func (t Theme) Warn(text string) string   { return t.paint(text, "#C99739", false) }
 func (t Theme) Title(text string) string  { return lipgloss.NewStyle().Bold(true).Render(text) }
-func (t Theme) Rule() string              { return t.Muted(strings.Repeat("─", max(1, t.Width))) }
+func (t Theme) Rule() string              { return t.Muted(strings.Repeat("─", max(1, t.width))) }
 
 func (t Theme) Heading(title, subtitle string) string {
 	return t.Title(title) + "\n" + t.Muted(subtitle) + "\n\n"
@@ -55,7 +62,7 @@ func (t Theme) Choice(label, description string, selected bool) string {
 	if description == "" {
 		return prefix + label + "\n"
 	}
-	if t.Width < 62 {
+	if t.width < 62 {
 		return prefix + label + "\n  " + t.Muted(description) + "\n"
 	}
 	return prefix + lipgloss.NewStyle().Width(16).Render(label) + "  " + t.Muted(description) + "\n"
@@ -65,7 +72,7 @@ func (t Theme) Step(current int) string {
 	steps := []string{"Template", "Configure", "Preview", "Create"}
 	for i, step := range steps {
 		label := fmt.Sprintf("%d %s", i+1, step)
-		if t.Width < 52 && i != current {
+		if t.width < 52 && i != current {
 			label = fmt.Sprint(i + 1)
 		}
 		if i == current {

@@ -15,7 +15,7 @@ func InitForm(inputs []string, focus int, force, dryRun bool, t Theme) string {
 		if i == focus {
 			label = t.Accent(labels[i])
 		}
-		if t.Width >= 62 {
+		if t.Width() >= 62 {
 			s += prefix + label + t.Muted(" · "+hints[i]) + "\n  " + input + "\n"
 		} else {
 			s += prefix + label + "\n  " + input + "\n  " + t.Muted(hints[i]) + "\n"

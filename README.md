@@ -136,10 +136,10 @@ arbitrary filesystem helpers. YAML uses `go.yaml.in/yaml/v3` with unknown-field
 rejection. Bubble Tea, Bubbles, and Lip Gloss use their v2 APIs.
 
 ```bash
+make fmt            # format code and imports (goimports & gofumpt)
 go test -race ./...
 go vet ./...
-go run mvdan.cc/gofumpt@v0.9.2 -w .
-golangci-lint run
+make lint           # runs golangci-lint
 govulncheck ./...
 goreleaser check
 ```
@@ -148,4 +148,9 @@ CI tests on Linux, macOS, and Windows and verifies a generated Python project an
 Husky installation. GoReleaser packages amd64/arm64 binaries and checksums for all
 three platforms. Pushing a `v*` tag triggers the GitHub release workflow.
 
+## Contributing
+
+We welcome contributions! Please check our **[Contributing Guide and Git Flow Workflow](docs/CONTRIBUTING.md)** for branch naming rules, Conventional Commits, local testing instructions, and the PR process.
+
 MIT licensed. No AI provider, network template loading, or external plugins in v1.
+
