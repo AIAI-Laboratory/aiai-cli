@@ -7,7 +7,7 @@ BIN_DIR="${ROOT_DIR}/bin"
 OUTPUT="${BIN_DIR}/aiai"
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}"
 AUTH_API_URL="${AIAI_API_URL:-}"
-GITHUB_CLIENT_ID="${AIAI_GITHUB_CLIENT_ID:-${GITHUB_CLIENT_ID:-Ov23litbDiAsvS9VB4Dy}}"
+GITHUB_CLIENT_ID="${AIAI_GITHUB_CLIENT_ID:-${GITHUB_CLIENT_ID:-Iv23liJgs8KBBbqZKlkG}}"
 
 mkdir -p "${BIN_DIR}"
 
