@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultGitHubClientID  = "Ov23litbDiAsvS9VB4Dy"
+	DefaultGitHubClientID  = "Iv23liJgs8KBBbqZKlkG"
 	DefaultGitHubOrigin    = "https://github.com"
 	DefaultDeviceCodeURL   = "https://github.com/login/device/code"
 	DefaultTokenURL        = "https://github.com/login/oauth/access_token"
