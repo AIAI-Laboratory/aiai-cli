@@ -6,6 +6,7 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/skill"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
@@ -40,6 +41,7 @@ type Envelope struct {
 	Version       string           `json:"version,omitempty"`
 	Auth          *Auth            `json:"auth,omitempty"`
 	Update        *Update          `json:"update,omitempty"`
+	Skill         *skill.Result    `json:"skill,omitempty"`
 }
 
 func JSON(w io.Writer, e Envelope) error {

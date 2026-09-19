@@ -16,6 +16,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/skill"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
@@ -31,6 +32,7 @@ type Dependencies struct {
 	Version  string
 	Auth     auth.Authenticator
 	Updater  updater.Service
+	Skills   skill.Service
 	// Interactive can be injected by tests; production uses actual descriptors.
 	Interactive func() bool
 }
@@ -46,6 +48,7 @@ type state struct {
 	status  string
 	auth    *output.Auth
 	update  *output.Update
+	skill   *skill.Result
 }
 
 func Run(ctx context.Context, args []string, deps Dependencies) int {
@@ -57,7 +60,7 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 	err := root.ExecuteContext(ctx)
 	code := ExitCode(err)
 	if s.json {
-		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update}
+		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, Skill: s.skill}
 		if err != nil {
 			e.Status = "error"
 			e.Error = &output.Error{Code: code, Message: err.Error()}
@@ -87,6 +90,10 @@ func ExitCode(err error) int {
 		return 4
 	case errors.Is(err, auth.ErrIO):
 		return 4
+	case errors.Is(err, skill.ErrConflict):
+		return 3
+	case errors.Is(err, skill.ErrIO):
+		return 4
 	default:
 		return 2
 	}
@@ -109,7 +116,7 @@ func (s *state) human() io.Writer {
 func (s *state) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "aiai",
-		Short:         "Create projects from deterministic, offline templates",
+		Short:         "Create projects and manage AIAI agent skills",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -129,7 +136,7 @@ func (s *state) root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&s.json, "json", false, "Emit one JSON envelope (schema version 1)")
 	root.PersistentFlags().BoolVar(&s.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&s.verbose, "verbose", false, "Write diagnostic logs to stderr")
-	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand())
+	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.skillCommand())
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		s.status = "help"

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/skill"
 )
 
 func PlanText(p scaffold.Plan) string {
@@ -15,6 +16,34 @@ func PlanText(p scaffold.Plan) string {
 	}
 	for _, warning := range p.Warnings {
 		fmt.Fprintf(&s, "\n%s\n", warning)
+	}
+	return s.String()
+}
+
+func SkillText(result skill.Result) string {
+	var s strings.Builder
+	switch result.Action {
+	case "available":
+		fmt.Fprintf(&s, "Available skills from %s:\n", skill.DefaultRepo)
+	case "list":
+		fmt.Fprintf(&s, "Installed %s skills in %s:\n", result.Scope, result.Destination)
+	case "install":
+		fmt.Fprintf(&s, "Installed %d skill(s) in %s:\n", len(result.Skills), result.Destination)
+	case "update":
+		fmt.Fprintf(&s, "Updated %d skill(s) in %s:\n", len(result.Skills), result.Destination)
+	case "remove":
+		fmt.Fprintf(&s, "Removed %d skill(s) from %s:\n", len(result.Skills), result.Destination)
+	}
+	if len(result.Skills) == 0 {
+		s.WriteString("  none\n")
+		return s.String()
+	}
+	for _, item := range result.Skills {
+		fmt.Fprintf(&s, "  %s", item.Name)
+		if item.Description != "" {
+			fmt.Fprintf(&s, " — %s", strings.Join(strings.Fields(item.Description), " "))
+		}
+		s.WriteByte('\n')
 	}
 	return s.String()
 }
