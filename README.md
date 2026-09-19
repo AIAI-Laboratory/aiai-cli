@@ -53,6 +53,11 @@ aiai login
 aiai whoami
 aiai logout
 aiai version
+aiai skill add codebase-replication
+aiai skill add --all --global
+aiai skill list
+aiai skill update
+aiai skill remove codebase-replication
 ```
 
 `aiai` and `aiai init` open the TUI only with a terminal. Non-interactive generation
@@ -65,6 +70,36 @@ and distribution name; the default Python package is `my_project`. `.` uses the
 current directory. `--target` overrides the destination; `--name` overrides project
 metadata; `--package` overrides the import name. With only `--name`, the normalized
 name becomes the destination. Explicit target paths may be absolute.
+
+## Agent skills
+
+The `skill` command downloads skills from
+[`AIAI-Laboratory/aiai-skills`](https://github.com/AIAI-Laboratory/aiai-skills).
+Project installs go to `.agents/skills`; pass `--global` to use
+`~/.agents/skills`. The plural `skills` form is an alias.
+
+```bash
+# Inspect the repository without installing
+aiai skill add --list
+
+# Install one or every available skill
+aiai skill add codebase-replication
+aiai skill add --all --global
+
+# Inspect, refresh, or remove installed skills
+aiai skill list
+aiai skill list --global
+aiai skill update codebase-replication
+aiai skill update --global
+aiai skill remove codebase-replication
+```
+
+Existing skill directories are preserved by default. Use `skill add --force`
+to replace one explicitly. `skill update` refreshes every installed skill in the
+selected scope when no names are supplied. All skill commands support the root
+`--json` flag. A `.aiai-skills.json` manifest in the selected skill directory
+tracks repository ownership, so `list`, `update`, and `remove --all` leave
+third-party skills untouched.
 
 ## Optional GitHub sign-in
 
@@ -133,7 +168,7 @@ no automatic backup. `--force` applies only to files listed by the template.
 ## Output contract
 
 `--json` emits one object with `schema_version: 1`, `status`, and optional `plan`,
-`result`, `auth`, `error`, and `version` fields. A plan contains destination,
+`result`, `auth`, `update`, `skill`, `error`, and `version` fields. A plan contains destination,
 template ID and version, warnings, and sorted operations (`path`, `action`, numeric `mode`).
 File bodies and internal hashes are excluded. Results report completed and skipped
 paths plus setup commands. Errors include a numeric exit code and message, with
@@ -184,5 +219,7 @@ three platforms. Pushing a `v*` tag triggers the GitHub release workflow.
 
 We welcome contributions! Please check our **[Contributing Guide and Git Flow Workflow](docs/CONTRIBUTING.md)** for branch naming rules, Conventional Commits, local testing instructions, and the PR process.
 
-MIT licensed. No AI provider, network template loading, or external plugins in v1.
-Only explicit authentication and future online commands contact the AIAI API.
+MIT licensed. Project generation has no AI provider, network template loading,
+or external plugin execution. Authentication contacts GitHub's Device Flow API;
+skill commands download repository snapshots from GitHub. All other generation
+and inspection workflows remain offline.
