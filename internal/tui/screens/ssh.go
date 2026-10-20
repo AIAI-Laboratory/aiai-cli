@@ -59,9 +59,10 @@ func AccessLogs(logs []sshmanager.AccessLog, t Theme) string {
 	}
 	for _, entry := range logs {
 		status := t.Warn(entry.Status)
-		if entry.Status == sshmanager.StatusSuccess {
+		switch entry.Status {
+		case sshmanager.StatusSuccess:
 			status = t.Good(entry.Status)
-		} else if entry.Status == sshmanager.StatusFailed {
+		case sshmanager.StatusFailed:
 			status = t.Accent(entry.Status)
 		}
 		duration := "-"
@@ -87,7 +88,7 @@ func SSHFailure(err error, t Theme) string {
 	return t.Heading("SSH", "Local server management") + t.Warn(message)
 }
 
-func KeyList(keys []sshmanager.Key, query string, notice string, cursor int, t Theme) string {
+func KeyList(keys []sshmanager.Key, query, notice string, cursor int, t Theme) string {
 	subtitle := "Managed keys and key pairs discovered in ~/.ssh."
 	if query != "" {
 		subtitle = "Results for " + strconv.Quote(query)
@@ -123,11 +124,10 @@ func KeyDetail(key sshmanager.Key, notice string, t Theme) string {
 	if notice != "" {
 		body += t.Good(notice) + "\n\n"
 	}
-	body +=
-		"Type: " + key.Type + "\n" +
-			"Fingerprint: " + key.Fingerprint + "\n" +
-			"Private key: " + key.PrivatePath + "\n" +
-			"Public key: " + key.PublicPath + "\n"
+	body += "Type: " + key.Type + "\n" +
+		"Fingerprint: " + key.Fingerprint + "\n" +
+		"Private key: " + key.PrivatePath + "\n" +
+		"Public key: " + key.PublicPath + "\n"
 	if key.Comment != "" {
 		body += "Comment: " + key.Comment + "\n"
 	}

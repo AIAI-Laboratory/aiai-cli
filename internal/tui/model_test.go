@@ -47,10 +47,13 @@ type fakeSSHManager struct {
 func (f *fakeSSHManager) Add(context.Context, sshmanager.AddRequest) (sshmanager.Server, error) {
 	return sshmanager.Server{}, nil
 }
+
 func (f *fakeSSHManager) List(context.Context) ([]sshmanager.Server, error) { return f.servers, nil }
+
 func (f *fakeSSHManager) Show(context.Context, string) (sshmanager.Server, error) {
 	return sshmanager.Server{}, nil
 }
+
 func (f *fakeSSHManager) Update(context.Context, string, sshmanager.UpdateRequest) (sshmanager.Server, error) {
 	return sshmanager.Server{}, nil
 }
@@ -66,18 +69,23 @@ func (f *fakeSSHManager) Connect(context.Context, string, sshmanager.Streams) er
 func (f *fakeSSHManager) Logs(context.Context, sshmanager.LogFilter) ([]sshmanager.AccessLog, error) {
 	return f.logs, nil
 }
+
 func (f *fakeSSHManager) GenerateKey(context.Context, sshmanager.KeyGenerateRequest, sshmanager.Streams) (sshmanager.Key, error) {
 	return sshmanager.Key{}, nil
 }
+
 func (f *fakeSSHManager) FindKeys(context.Context, string) ([]sshmanager.Key, error) {
 	return []sshmanager.Key{{Name: "laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:test", PrivatePath: "/keys/laptop", PublicPath: "/keys/laptop.pub", Managed: true}}, nil
 }
+
 func (f *fakeSSHManager) FindKey(context.Context, string) (sshmanager.Key, error) {
 	return sshmanager.Key{Name: "laptop"}, nil
 }
+
 func (f *fakeSSHManager) PublicKey(context.Context, string) (string, error) {
 	return "ssh-ed25519 AQID laptop", nil
 }
+
 func (f *fakeSSHManager) RemoveKey(_ context.Context, value string) error {
 	f.removed = value
 	return nil
