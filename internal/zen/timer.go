@@ -41,10 +41,14 @@ func (t *Timer) Resume(now time.Time) {
 	if t.State == TimerPaused {
 		t.pausedTotal += now.Sub(t.pausedAt)
 		t.State, t.lastSeen = TimerRunning, now
+		t.uncertain = false
 	}
 }
 
 func (t *Timer) Remaining(now time.Time) time.Duration {
+	if t.State == TimerCompleted {
+		return 0
+	}
 	if t.State == TimerIdle {
 		return t.Duration
 	}
@@ -57,7 +61,7 @@ func (t *Timer) Remaining(now time.Time) time.Duration {
 			now = t.pausedAt
 		}
 	}
-	remaining := t.Duration - now.Sub(t.started) + t.pausedTotal
+	remaining := min(t.Duration, t.Duration-now.Sub(t.started)+t.pausedTotal)
 	if remaining <= 0 {
 		if !t.uncertain {
 			t.State = TimerCompleted
@@ -71,7 +75,7 @@ func (t *Timer) Active(now time.Time) time.Duration { return t.Duration - t.Rema
 func (t *Timer) Uncertain() bool                    { return t.uncertain }
 
 func (t *Timer) observe(now time.Time) {
-	if !t.lastSeen.IsZero() && now.Sub(t.lastSeen) > 2*time.Minute {
+	if !t.lastSeen.IsZero() && now.UTC().Sub(t.lastSeen.UTC()) > 2*time.Minute {
 		t.uncertain = true
 		t.State = TimerPaused
 		t.pausedAt = t.lastSeen

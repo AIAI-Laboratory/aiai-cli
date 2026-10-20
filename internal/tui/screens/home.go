@@ -33,6 +33,8 @@ type Command struct {
 
 var HomeItems = []Command{
 	{"/init", "Initialize a Python project", "Project"},
+	{"/workspace", "Your projects and development timeline", "Project"},
+	{"/git", "Read-only Git workspace", "Project"},
 	{"/servers", "Browse local SSH server profiles", "SSH"},
 	{"/ssh", "Connect to a configured SSH server", "SSH"},
 	{"/logs", "View SSH access history", "SSH"},
@@ -110,7 +112,7 @@ func Home(cursor int, query, category string, t Theme) string {
 	var s strings.Builder
 	if strings.TrimSpace(query) == "" && category == "" {
 		descriptions := map[string]string{
-			"Project": "Create a project",
+			"Project": "Workspace, Git, and scaffolding",
 			"SSH":     "Servers, keys, and access logs",
 			"Account": "Authentication and profile",
 			"AIAI":    "Zen, monitor, and updates",

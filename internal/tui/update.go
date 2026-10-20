@@ -15,6 +15,8 @@ import (
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case contextMsg:
+		m.projectContext = string(msg)
 	case cancelMsg:
 		return m.stop()
 	case spinner.TickMsg:

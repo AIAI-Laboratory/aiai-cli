@@ -4,8 +4,9 @@
 
 # AIAI CLI
 
-A deterministic project scaffolder with a Cobra command interface and a Bubble
-Tea terminal UI. Templates are compiled into the binary; generation works offline
+A local-first developer workspace with Git browsing, project registration,
+project-aware focus tracking, SSH tools, and deterministic scaffolding. It uses
+Cobra and Bubble Tea. Templates are compiled into the binary; generation works offline
 and does not run subprocesses or install dependencies. Optional GitHub sign-in
 provides an AIAI session for online features without changing the offline workflow.
 
@@ -57,6 +58,134 @@ aiai logout
 aiai version
 ```
 
+## Developer Workspace
+
+Register only the directories you choose. Git is optional for projects; linked
+worktrees are distinct contexts with a shared repository identity. Nothing scans
+your home directory or automatically registers visited directories.
+
+```bash
+aiai workspace add . --name aiai-cli --tags go,cli
+aiai workspace add /path/to/backend --name backend --description "Backend service"
+aiai workspace                 # interactive board
+aiai workspace board
+aiai workspace list --json
+aiai workspace show aiai-cli
+aiai workspace path aiai-cli
+aiai workspace activity aiai-cli --since 2026-10-01 --branch main
+aiai workspace today --json
+aiai workspace remove backend  # unregister metadata only; never deletes files
+```
+
+The Project category in Home exposes `/workspace` and `/git`. A lightweight,
+asynchronous local context line shows the current branch and change count.
+Home startup does not check for updates over the network; use `/update` explicitly.
+Workspace boards use actual Git data, associated focus statistics and recent
+activity. At 120 columns, the board shows three columns; smaller terminals use
+two or one. Enter opens a chronological timeline, `g` opens Git, and `z` starts
+project focus. Returning from Git/Zen restores the selected project. Missing or
+moved directories remain registered as unavailable, with saved focus history
+still accessible; unregister/re-register explicitly to change a directory.
+
+Use ↑/↓ or `j/k` to navigate, `/` to search, `r` to refresh, `?` for help and
+Esc/`q` to return. Printable shortcuts are disabled while typing a search.
+Git and Workspace load asynchronously; no filesystem or Git queries run in
+their render functions. Boards run at most four project queries concurrently,
+with a four-second budget per project. Errors on one project do not hide others.
+
+### AIAI Git — read-only and offline
+
+Git must be installed and available in `PATH`. No GitHub sign-in is required.
+
+```bash
+aiai git                         # interactive Git workspace
+aiai git status --repo . --json
+aiai git changes --repo /path/to/repo
+aiai git diff --file internal/main.go
+aiai git diff --staged
+aiai git diff --interactive
+aiai git history --limit 200 --since 2026-10-01 --author "Example"
+aiai git branches
+aiai git worktrees
+aiai git activity --since 2026-10-01 --until 2026-10-20 --json
+aiai git repo add . --name aiai
+aiai git repo list --json
+aiai git repo remove aiai
+aiai git board
+```
+
+The Git TUI has Status, Changes, History, Branches, Worktrees and Activity pages.
+Use ←/→ to change pages. Changes shows files beside a colored diff on wide
+terminals; Tab switches to the preview on narrow terminals and moves keyboard
+focus between files/preview. ↑/↓ scrolls the focused area; `s` toggles index versus
+working-tree diffs. Long lines are truncated, binary changes are indicated, and
+untracked contents are not opened. Git never stages, edits or discards files.
+
+Queries use argument arrays, NUL-delimited porcelain paths, cancellation,
+12-second subprocess timeouts and bounded output (4 MiB). Pagers, hooks,
+external diff/textconv and optional index writes are disabled. Git ownership
+checks remain enabled. Diagnostics deliberately omit arbitrary Git stderr,
+which can contain credentials. No remote URLs are displayed. No fetch, push,
+pull, checkout, reset, clean or rebase is performed.
+
+Ahead/behind counts use **local tracking refs**, not a live remote check. History
+queries default to 100 commits and accept `--limit 1..1000`, `--since`, `--until`,
+`--branch` and explicit `--author` filters. Date-only filters use local calendar
+dates (inclusive end date); timestamps accept RFC3339. Activity uses committer
+timestamps and displays all authors by default. UI history is a bounded snapshot
+of up to 100 commits; use CLI filters for a different window. Daily board commit
+counts are similarly bounded and expose a truncation flag in JSON.
+
+### Git × focus timeline
+
+```bash
+aiai zen focus --project aiai-cli --label "Workspace integration"
+aiai zen focus --repo . --work 50m --break 10m
+aiai zen stats --project aiai-cli --week --json
+aiai zen history --project aiai-cli
+aiai zen history --repo . --json
+aiai workspace activity aiai-cli --since 2026-10-01 --json
+```
+
+Sessions retain project/worktree identity, initial/final branch and HEAD, UTC
+timestamps, planned and actual active milliseconds, and an optional label.
+`--project` and `--repo` are alternatives; standalone, non-Git focus still works.
+Start/end snapshots are local observations, not continuous monitoring. If the
+branch stays the same and the start HEAD is an ancestor of the end HEAD, Zen
+reports new reachable commits; branch changes, missing Git data or rewritten
+history produce an uncertainty message. Timer facts are persisted **before**
+optional Git collection, so a Git failure cannot discard the session.
+
+Timeline events retain stable source identities and merge focus start/end with
+currently reachable commits. Git history is queried afresh, so rewritten commits
+are not left in an application cache. Session branch filters match either its
+initial or final branch; Git branch filtering selects history reachable from
+that revision, not proof that a commit was originally created on that branch.
+Commit counts do not measure hours worked, authorship or causality. Commits and
+associated focus sessions are deliberately presented as separate facts.
+
+### Local JSON and recovery
+
+`workspaces.json` (schema 1) and `zen.json` (schema 2) live beside `ssh.json` in the
+platform config directory, or in `AIAI_CONFIG_DIR`. No SQL, cloud sync, telemetry,
+source code or full diffs are stored. Writes use OS-held cross-process locks,
+private temporary files, fsync and atomic replacement. Corrupt/unknown schemas
+are reported and preserved. The JSON reader is bounded to 32 MiB; archive older
+history explicitly if that limit is reached.
+
+Existing Zen schema-1 records remain readable and gain millisecond fields on
+the next write; legacy second fields are retained. Running/paused sessions are
+upserted at meaningful transitions, not each animation tick. A dead process's
+unfinished session is recovered as **interrupted**, never completed, retaining
+only its last persisted active duration. A crash can therefore undercount focus
+since the last transition; it never invents unobserved focus time. Process IDs
+are checked conservatively; an apparently live owner is not taken over.
+
+Daily/weekly focus totals use actual active time and group sessions by their
+local start date. Pauses are excluded, completed averages exclude interrupted
+sessions, and calendar-day grouping handles DST. A long unobserved wall-clock
+gap pauses the timer conservatively until explicit resume.
+
 ## AIAI Zen
 
 **AIAI Zen — A little peace inside your terminal.** Zen combines an animated,
@@ -66,7 +195,7 @@ bubbles and seaweed. The simulation is bounded and targets roughly 10–12 FPS;
 reduced-motion mode lowers the update rate.
 
 ```bash
-aiai zen
+aiai zen                       # Just Chill / Focus / Stats / History / Settings
 aiai zen aquarium
 aiai zen focus
 aiai zen focus --work 25m --break 5m --long-break 15m --cycles 4
@@ -295,6 +424,11 @@ and applies files. `internal/template` reads strict manifests through a registry
 `templates/embed.go` embeds the assets including dotfiles and Python underscored
 modules. `internal/platform` owns terminal detection and filesystem containment;
 `internal/auth` owns the AIAI API session and credential persistence.
+`internal/git` owns read-only subprocess queries; `internal/workspace` combines
+explicit registrations with Git and Zen projections. `internal/localdata`
+provides versioned JSON file locking/atomic updates. `internal/tui/developer`
+presents Git and Workspace through the same services as the CLI. The command
+layer switches terminal ownership sequentially between Home, Workspace and Zen.
 All service interfaces are internal; there is no public Go SDK.
 
 Add a template under `templates/`, declare every file and scalar variable in its

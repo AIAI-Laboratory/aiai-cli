@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 )
 
 // Theme leaves the terminal background and normal foreground untouched so the
@@ -22,41 +25,32 @@ func (t Theme) Width() int    { return t.width }
 func (t Theme) NoColor() bool { return t.noColor }
 
 func (t Theme) paint(text, color string, bold bool) string {
-	s := lipgloss.NewStyle().Bold(bold)
-	if !t.noColor {
-		s = s.Foreground(lipgloss.Color(color))
-	}
-	return s.Render(text)
+	return style.Paint(text, color, bold, t.noColor)
 }
 
-func (t Theme) Accent(text string) string { return t.paint(text, "#FF5F56", true) }
-func (t Theme) Brand(text string) string  { return t.paint(text, "#FF3B30", true) }
-func (t Theme) Muted(text string) string  { return t.paint(text, "#808080", false) }
-func (t Theme) Good(text string) string   { return t.paint(text, "#36A879", false) }
-func (t Theme) Warn(text string) string   { return t.paint(text, "#C99739", false) }
-func (t Theme) Title(text string) string  { return lipgloss.NewStyle().Bold(true).Render(text) }
+func (t Theme) Accent(text string) string { return t.paint(text, style.Accent, true) }
+func (t Theme) Brand(text string) string  { return t.paint(text, style.Accent, true) }
+func (t Theme) Muted(text string) string  { return t.paint(text, style.Muted, false) }
+func (t Theme) Good(text string) string   { return t.paint(text, style.Good, false) }
+func (t Theme) Warn(text string) string   { return t.paint(text, style.Warn, false) }
+func (t Theme) Title(text string) string  { return t.paint(text, "", true) }
 func (t Theme) Rule() string              { return t.Muted(strings.Repeat("─", max(1, t.width))) }
 
 func (t Theme) Section(title string) string {
-	return t.Muted(strings.ToUpper(title))
+	return t.Title(title)
 }
 
 func (t Theme) Truncate(text string, width int) string { return truncate(text, width) }
 
 func (t Theme) Heading(title, subtitle string) string {
+	if subtitle == "" {
+		return t.Title(title) + "\n\n"
+	}
 	return t.Title(title) + "\n" + t.Muted(subtitle) + "\n\n"
 }
 
 func (t Theme) Keys(hint string) string {
-	parts := strings.Split(hint, " · ")
-	for i, part := range parts {
-		key, label, _ := strings.Cut(part, " ")
-		parts[i] = t.Accent(key)
-		if label != "" {
-			parts[i] += t.Muted(" " + label)
-		}
-	}
-	return strings.Join(parts, t.Muted(" · "))
+	return ansi.Truncate(style.Keys(hint, t.noColor), t.width, "…")
 }
 
 func (t Theme) Choice(label, description string, selected bool) string {
@@ -83,23 +77,7 @@ func (t Theme) Choice(label, description string, selected bool) string {
 }
 
 func truncate(text string, width int) string {
-	if lipgloss.Width(text) <= width {
-		return text
-	}
-	if width <= 1 {
-		return "…"
-	}
-	var result strings.Builder
-	used := 0
-	for _, r := range text {
-		cellWidth := lipgloss.Width(string(r))
-		if used+cellWidth > width-1 {
-			break
-		}
-		result.WriteRune(r)
-		used += cellWidth
-	}
-	return result.String() + "…"
+	return ansi.Truncate(text, max(1, width), "…")
 }
 
 func (t Theme) Step(current int) string {

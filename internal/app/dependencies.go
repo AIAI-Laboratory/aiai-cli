@@ -5,12 +5,14 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/command"
+	gitlocal "github.com/AIAI-Laboratory/aiai-cli/internal/git"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/workspace"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
@@ -43,18 +45,25 @@ func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, 
 	if err != nil {
 		return command.Dependencies{}, err
 	}
+	gitService := &gitlocal.Service{}
+	workspaceService, err := workspace.New("", gitService, zenRepository)
+	if err != nil {
+		return command.Dependencies{}, err
+	}
 	return command.Dependencies{
-		Planner:  project.Initializer{Engine: scaffold.Engine{Registry: r}},
-		Executor: scaffold.FileExecutor{},
-		Registry: r,
-		Auth:     authService,
-		Updater:  updaterService,
-		SSH:      sshService,
-		Zen:      zenRepository,
-		Monitor:  &monitor.NativeCollector{},
-		In:       in,
-		Out:      out,
-		Err:      errOut,
-		Version:  version,
+		Planner:   project.Initializer{Engine: scaffold.Engine{Registry: r}},
+		Executor:  scaffold.FileExecutor{},
+		Registry:  r,
+		Auth:      authService,
+		Updater:   updaterService,
+		SSH:       sshService,
+		Zen:       zenRepository,
+		Monitor:   &monitor.NativeCollector{},
+		Git:       gitService,
+		Workspace: workspaceService,
+		In:        in,
+		Out:       out,
+		Err:       errOut,
+		Version:   version,
 	}, nil
 }

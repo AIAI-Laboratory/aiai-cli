@@ -64,6 +64,8 @@ type Envelope struct {
 	SSH           *SSH              `json:"ssh,omitempty"`
 	Zen           *Zen              `json:"zen,omitempty"`
 	System        *monitor.Snapshot `json:"system,omitempty"`
+	Git           any               `json:"git,omitempty"`
+	Workspace     any               `json:"workspace,omitempty"`
 }
 
 func JSON(w io.Writer, e Envelope) error {

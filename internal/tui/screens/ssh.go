@@ -12,9 +12,9 @@ import (
 )
 
 func ServerList(servers []sshmanager.Server, cursor int, connect bool, filter string, t Theme) string {
-	title, subtitle := "SSH servers", "Local profiles available on this computer."
+	title, subtitle := "SSH servers", ""
 	if connect {
-		title, subtitle = "Connect with SSH", "Choose a server; AIAI will release the TUI before starting OpenSSH."
+		title, subtitle = "Connect with SSH", "Choose a server"
 	}
 	var body strings.Builder
 	body.WriteString(t.Heading(title, subtitle))
@@ -70,7 +70,7 @@ func serverDetailBody(server sshmanager.Server, t Theme, width int) string {
 
 func AccessLogs(logs []sshmanager.AccessLog, t Theme) string {
 	var body strings.Builder
-	body.WriteString(t.Heading("SSH access history", "Newest sessions first; timestamps use local time."))
+	body.WriteString(t.Heading("SSH access history", "Newest first · local time"))
 	if len(logs) == 0 {
 		body.WriteString(t.Muted("No SSH sessions recorded yet.\n\n"))
 		body.WriteString("Connect with " + t.Accent("/ssh") + " and completed sessions will appear here.")
@@ -80,8 +80,8 @@ func AccessLogs(logs []sshmanager.AccessLog, t Theme) string {
 		serverWidth := min(18, max(12, t.Width()/5))
 		destinationWidth := max(16, t.Width()-serverWidth-41)
 		fmt.Fprintf(&body, "%s  %s  %s  %s  %s\n",
-			logCell(t.Section("Status"), 9), logCell(t.Section("Server"), serverWidth),
-			logCell(t.Section("Destination"), destinationWidth), logCell(t.Section("Started"), 16), logCell(t.Section("Duration"), 8))
+			logCell(t.Section("STATUS"), 9), logCell(t.Section("SERVER"), serverWidth),
+			logCell(t.Section("DESTINATION"), destinationWidth), logCell(t.Section("STARTED"), 16), logCell(t.Section("DURATION"), 8))
 		body.WriteString(t.Muted(strings.Repeat("─", t.Width())) + "\n")
 		for _, entry := range logs {
 			fmt.Fprintf(&body, "%s  %s  %s  %s  %s\n",
@@ -157,7 +157,7 @@ func SSHFailure(err error, t Theme) string {
 }
 
 func KeyList(keys []sshmanager.Key, query, filter, notice string, cursor int, t Theme) string {
-	subtitle := "Managed keys and key pairs discovered in ~/.ssh."
+	subtitle := ""
 	if query != "" {
 		subtitle = "Results for " + strconv.Quote(query)
 	}
@@ -182,7 +182,7 @@ func KeyList(keys []sshmanager.Key, query, filter, notice string, cursor int, t 
 		if key.Managed {
 			source = "managed"
 		}
-		description := source + " · " + strings.TrimPrefix(key.Type, "ssh-") + " · " + key.Fingerprint
+		description := strings.TrimPrefix(key.Type, "ssh-") + " · " + source
 		body.WriteString(t.Choice(key.Name, description, i == cursor))
 	}
 	return strings.TrimSuffix(body.String(), "\n")

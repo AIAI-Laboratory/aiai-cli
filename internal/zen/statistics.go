@@ -22,14 +22,22 @@ func CalculateStatistics(sessions []Session, now time.Time) Statistics {
 		if dayStart.Equal(startToday) {
 			addStat(&result.Today, session)
 		}
-		index := int(dayStart.Sub(startWeek).Hours() / 24)
-		if index >= 0 && index < 7 {
-			addStat(&result.Week[index], session)
+		for i := range result.Week {
+			if dayStart.Format("2006-01-02") == result.Week[i].Date {
+				addStat(&result.Week[i], session)
+				break
+			}
 		}
 	}
 	finalizeStat(&result.Today)
 	for i := range result.Week {
 		finalizeStat(&result.Week[i])
+		result.WeekFocusSeconds += result.Week[i].FocusSeconds
+		result.WeekCompleted += result.Week[i].Completed
+		result.AverageCompleted += result.Week[i].completedSeconds
+	}
+	if result.WeekCompleted > 0 {
+		result.AverageCompleted /= int64(result.WeekCompleted)
 	}
 	return result
 }
@@ -39,6 +47,7 @@ func addStat(stat *DayStat, session Session) {
 	switch session.Status {
 	case StatusCompleted:
 		stat.Completed++
+		stat.completedSeconds += session.ActiveSeconds
 	case StatusInterrupted:
 		stat.Interrupted++
 	}
@@ -50,6 +59,6 @@ func finalizeStat(stat *DayStat) {
 		stat.CompletionRate = stat.Completed * 100 / total
 	}
 	if stat.Completed > 0 {
-		stat.AverageCompleted = stat.FocusSeconds / int64(stat.Completed)
+		stat.AverageCompleted = stat.completedSeconds / int64(stat.Completed)
 	}
 }

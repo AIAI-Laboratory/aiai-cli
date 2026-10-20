@@ -19,6 +19,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
@@ -61,6 +62,8 @@ type Action struct {
 	GenerateKey *sshmanager.KeyGenerateRequest
 	Zen         bool
 	Monitor     bool
+	Git         bool
+	Workspace   bool
 }
 
 type Options struct {
@@ -71,6 +74,7 @@ type Options struct {
 	Version   string
 	SSH       sshmanager.Manager
 	Clipboard func(string) error
+	Context   func(context.Context) string
 }
 
 type Model struct {
@@ -125,9 +129,11 @@ type Model struct {
 	keyDeleteYes       bool
 	clipboard          func(string) error
 	action             Action
+	projectContext     string
 }
 
 type (
+	contextMsg string
 	plannedMsg struct {
 		plan scaffold.Plan
 		err  error
@@ -210,7 +216,7 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	}
 	m.progress = spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	if !opts.NoColor {
-		m.progress.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F56"))
+		m.progress.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(style.Accent))
 	}
 	if m.clipboard == nil {
 		m.clipboard = clipboard.WriteAll
@@ -274,18 +280,16 @@ func Run(ctx context.Context, planner project.Planner, executor scaffold.Executo
 
 func (m Model) Init() tea.Cmd {
 	commands := []tea.Cmd{textinput.Blink}
+	if m.opts.Context != nil {
+		commands = append(commands, func() tea.Msg { return contextMsg(m.opts.Context(m.ctx)) })
+	}
 	if m.auth != nil && !m.opts.StartInit {
 		commands = append(commands, func() tea.Msg {
 			result, err := m.auth.Cached()
 			return authCachedMsg{result: result, err: err}
 		})
 	}
-	if m.updater != nil && !m.opts.StartInit {
-		commands = append(commands, func() tea.Msg {
-			res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, false)
-			return updateCheckedMsg{result: res, err: err, manual: false}
-		})
-	}
+	// Startup is offline. /update remains the explicit network entry point.
 	return tea.Batch(commands...)
 }
 
@@ -309,9 +313,9 @@ func (m Model) withProgress(cmd tea.Cmd) tea.Cmd {
 func (m Model) styleInput(input *textinput.Model) {
 	styles := textinput.Styles{}
 	if !m.opts.NoColor {
-		styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#808080"))
+		styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(style.Muted))
 		styles.Blurred.Placeholder = styles.Focused.Placeholder
-		styles.Cursor.Color = lipgloss.Color("#FF5F56")
+		styles.Cursor.Color = lipgloss.Color(style.Accent)
 	}
 	styles.Cursor.Blink = true
 	input.SetStyles(styles)

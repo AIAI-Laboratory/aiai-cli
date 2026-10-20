@@ -524,6 +524,12 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "/zen":
 			m.action.Zen = true
 			return m, tea.Quit
+		case "/git":
+			m.action.Git = true
+			return m, tea.Quit
+		case "/workspace":
+			m.action.Workspace = true
+			return m, tea.Quit
 		case "/monitor":
 			m.action.Monitor = true
 			return m, tea.Quit

@@ -10,6 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 )
 
 func (m Model) View() tea.View {
@@ -26,14 +28,14 @@ func (m Model) View() tea.View {
 	} else if m.loading && m.snapshot.At.IsZero() {
 		status = "SAMPLING"
 	}
-	header := m.accent("AIAI MONITOR") + m.muted(fmt.Sprintf("  %s · %s · %s", status, m.interval, clean(m.snapshot.System.Hostname)))
+	header := style.Paint("AIAI / Monitor", "", true, m.noColor) + m.muted(fmt.Sprintf("  %s · %s", status, clean(m.snapshot.System.Hostname)))
 	if m.snapshot.System.UptimeSeconds != nil {
 		header += m.muted(" · up " + (time.Duration(*m.snapshot.System.UptimeSeconds) * time.Second).Round(time.Minute).String())
 	}
 	header += "\n" + m.muted(strings.Repeat("─", w))
 	separator := "\n\n"
 	if height < 18 {
-		header = m.accent("AIAI MONITOR") + m.muted("  "+status)
+		header = style.Paint("AIAI / Monitor", "", true, m.noColor) + m.muted("  "+status)
 		separator = "\n"
 	}
 	var body string
@@ -85,7 +87,7 @@ func (m Model) View() tea.View {
 		available := height - lipgloss.Height(header) - lipgloss.Height(body) - 6 - 2*(strings.Count(separator, "\n")-1)
 		body += separator + m.processView(w, max(1, available))
 	}
-	footer := "↑/↓ select · c/m/p sort · / search · tab panel · space pause · r refresh · ? help · q back"
+	footer := "↑↓ select · tab panel · c/m sort · / search · space pause · ? help · q back"
 	if w < 80 {
 		footer = "↑/↓ · c/m/p sort · / search · tab · ? help · q back"
 	}
@@ -105,7 +107,7 @@ func (m Model) View() tea.View {
 	for len(lines) < limit {
 		lines = append(lines, "")
 	}
-	content = strings.Join(lines, "\n") + "\n" + ansi.Truncate(m.muted(footer), w, "…")
+	content = strings.Join(lines, "\n") + "\n" + ansi.Truncate(style.Keys(footer, m.noColor), w, "…")
 	view := tea.NewView(lipgloss.NewStyle().PaddingTop(1).PaddingBottom(1).PaddingLeft(max(2, (width-w)/2)).Render(content))
 	view.AltScreen = true
 	return view
@@ -243,19 +245,11 @@ func (m Model) title(panel int, text string) string {
 }
 
 func (m Model) accent(s string) string {
-	style := lipgloss.NewStyle().Bold(true)
-	if !m.noColor {
-		style = style.Foreground(lipgloss.Color("#FF5F56"))
-	}
-	return style.Render(s)
+	return style.Paint(s, style.Accent, true, m.noColor)
 }
 
 func (m Model) muted(s string) string {
-	style := lipgloss.NewStyle()
-	if !m.noColor {
-		style = style.Foreground(lipgloss.Color("#808080"))
-	}
-	return style.Render(s)
+	return style.Paint(s, style.Muted, false, m.noColor)
 }
 
 func percentText(value *float64) string {
@@ -297,7 +291,13 @@ func (m Model) bar(value *float64, w int) string {
 		return m.muted("unavailable")
 	}
 	filled := int(math.Round(max(0, min(100, *value)) * float64(w) / 100))
-	return m.accent(strings.Repeat("█", filled)) + m.muted(strings.Repeat("░", w-filled)) + fmt.Sprintf(" %5.1f%%", *value)
+	color := style.Good
+	if *value >= 85 {
+		color = style.Accent
+	} else if *value >= 70 {
+		color = style.Warn
+	}
+	return style.Paint(strings.Repeat("█", filled), color, false, m.noColor) + m.muted(strings.Repeat("░", w-filled)) + style.Paint(fmt.Sprintf(" %5.1f%%", *value), "", true, m.noColor)
 }
 
 func (m Model) spark(history []float64, w int, scale float64) string {
@@ -327,5 +327,5 @@ func (m Model) spark(history []float64, w int, scale float64) string {
 		}
 		b.WriteRune(glyphs[index])
 	}
-	return m.accent(b.String())
+	return style.Paint(b.String(), style.Info, false, m.noColor)
 }

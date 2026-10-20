@@ -42,6 +42,9 @@ func (m Model) content() string {
 	switch m.screen {
 	case home:
 		body = screens.Home(m.cursor, m.command.Value(), m.homeCategory, t)
+		if m.projectContext != "" {
+			body = t.Muted(t.Truncate(m.projectContext, t.Width())) + "\n\n" + body
+		}
 	case selection:
 		items := make([]screens.TemplateItem, len(m.templates))
 		for i, tmpl := range m.templates {

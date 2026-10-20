@@ -2,6 +2,7 @@ package zen
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -133,5 +134,153 @@ func TestFocusSetupSupportsDefaultsAndCustomValues(t *testing.T) {
 	_ = cmd()
 	if repo.config.WorkSeconds != before+5*60 {
 		t.Fatal("custom configuration was not saved")
+	}
+}
+
+func TestFocusLifecyclePersistsStableIdentity(t *testing.T) {
+	now := time.Now().UTC()
+	repo, _ := zenmodel.NewJSONRepository(filepath.Join(t.TempDir(), "zen.json"))
+	config := zenmodel.DefaultConfig()
+	config.WorkSeconds = 10
+	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: config, Repo: repo, Now: func() time.Time { return now }, Context: zenmodel.Session{ProjectID: "project", ProjectName: "app"}})
+	start := m.session(now, zenmodel.StatusRunning)
+	msg := m.persist(start)()
+	next, _ := m.Update(msg)
+	m = next.(Model)
+	now = now.Add(3 * time.Second)
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	m = next.(Model)
+	msg = cmd()
+	next, _ = m.Update(msg)
+	m = next.(Model)
+	paused := m.session(now, zenmodel.StatusPaused)
+	if paused.ID != start.ID || paused.ActiveMS != 3000 || paused.ProjectID != "project" {
+		t.Fatalf("pause %+v", paused)
+	}
+	now = now.Add(time.Hour)
+	next, cmd = m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	m = next.(Model)
+	_ = cmd()
+	now = now.Add(7 * time.Second)
+	next, cmd = m.Update(tickMsg(now))
+	m = next.(Model)
+	if !m.recorded || m.timer.State != zenmodel.TimerCompleted || cmd == nil {
+		t.Fatal("completion did not continue ticking")
+	}
+	final := m.session(now, zenmodel.StatusCompleted)
+	_ = m.persist(final)()
+	_, sessions, err := repo.Load(context.Background())
+	if err != nil || len(sessions) != 1 || sessions[0].ActiveSeconds != 10 || sessions[0].Status != zenmodel.StatusCompleted {
+		t.Fatalf("completion %+v %v", sessions, err)
+	}
+	m.startNextStage()
+	if m.stage != zenmodel.SessionShortBreak || m.sessionID == start.ID {
+		t.Fatal("short break not started with fresh identity")
+	}
+	m.stage = zenmodel.SessionFocus
+	m.cycle = config.Cycles
+	m.startNextStage()
+	if m.stage != zenmodel.SessionLongBreak {
+		t.Fatal("long break missing")
+	}
+	m.startNextStage()
+	if m.stage != zenmodel.SessionFocus || m.cycle != 1 {
+		t.Fatal("cycle did not reset")
+	}
+}
+
+func TestFocusKeepsTimeInStatisticsAndPreservesRecordBeforeEnrichment(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &memoryRepo{}
+	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), Repo: repo, Now: func() time.Time { return now }})
+	m.screen = statsScreen
+	for range 3 {
+		now = now.Add(time.Minute)
+		next, _ := m.Update(tickMsg(now))
+		m = next.(Model)
+	}
+	if m.timer.State != zenmodel.TimerRunning || m.timer.Active(now) != 3*time.Minute {
+		t.Fatal("background timer stopped")
+	}
+	m.opts.Enrich = func(_ context.Context, s zenmodel.Session) zenmodel.Session {
+		if len(repo.sessions) == 0 {
+			t.Fatal("Git queried before timer record persisted")
+		}
+		s.Observation = "Git unavailable"
+		return s
+	}
+	msg := m.persist(m.session(now, zenmodel.StatusInterrupted))()
+	if msg.(savedMsg).err != nil || len(repo.sessions) != 2 {
+		t.Fatal("record lost on Git failure")
+	}
+}
+
+func TestProjectFocusKeepsControlsVisible(t *testing.T) {
+	for _, size := range [][2]int{{120, 40}, {100, 30}, {80, 24}, {60, 20}, {40, 15}} {
+		m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), NoColor: true, Width: size[0], Height: size[1], Context: zenmodel.Session{ProjectName: "aiai-cli"}})
+		m.opts.Context.BranchAtStart = "feature/workspace"
+		for _, message := range []string{"", "2m active · 0 new reachable commits observed\nHEAD abcdef01 → abcdef01"} {
+			m.message = message
+			view := m.View().Content
+			if !strings.Contains(view, "q end") || lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+				t.Fatalf("%dx%d controls clipped: %q", size[0], size[1], view)
+			}
+		}
+	}
+}
+
+func TestCompletedSessionCannotBecomeRunningFromDelayedSave(t *testing.T) {
+	now := time.Now().UTC()
+	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), Now: func() time.Time { return now }})
+	m.timer.State = zenmodel.TimerCompleted
+	m.recorded = true
+	final := m.session(now, zenmodel.StatusCompleted)
+	m.opts.Sessions = []zenmodel.Session{final}
+	delayed := final
+	delayed.Status = zenmodel.StatusRunning
+	delayed.UpdatedAt = now.Add(time.Second)
+	next, _ := m.Update(savedMsg{session: &delayed})
+	m = next.(Model)
+	if m.opts.Sessions[0].Status != zenmodel.StatusCompleted {
+		t.Fatal("delayed transition regressed completed session")
+	}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	if cmd != nil {
+		t.Fatal("p attempted to resume a completed session")
+	}
+}
+
+func TestEveryZenScreenKeepsControlsVisibleAndReadable(t *testing.T) {
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {60, 20}, {40, 15}} {
+		for _, s := range []screen{menu, aquariumScreen, focusPresetScreen, focusCustomScreen, focusScreen, statsScreen, historyScreen, settingsScreen, helpScreen, exitConfirm} {
+			m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), NoColor: true, Width: size[0], Height: size[1]})
+			m.screen = s
+			view := m.View().Content
+			if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+				t.Fatalf("%v screen %d overflow", size, s)
+			}
+			if !strings.Contains(view, "back") && !strings.Contains(view, "quit") && !strings.Contains(view, "end") {
+				t.Fatalf("%v screen %d controls clipped: %q", size, s, view)
+			}
+			if strings.Contains(view, "A little peace inside") {
+				t.Fatal("decorative subtitle returned")
+			}
+		}
+	}
+}
+
+func TestStatisticsScrollsWithoutAffectingTimer(t *testing.T) {
+	now := time.Now()
+	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), NoColor: true, Width: 40, Height: 15, Now: func() time.Time { return now }})
+	next, _ := m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	m = next.(Model)
+	if m.scrollOffset == 0 || m.timer.State != zenmodel.TimerRunning {
+		t.Fatal("stats could not scroll independently")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if next.(Model).screen != focusScreen {
+		t.Fatal("stats did not return to focus")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	zentui "github.com/AIAI-Laboratory/aiai-cli/internal/tui/zen"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/workspace"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
@@ -21,9 +23,12 @@ func (s *state) zenCommand() *cobra.Command {
 		Short: "A little peace inside your terminal",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return s.runZen(cmd.Context(), zentui.StartAquarium, zen.Config{})
+			return s.runZen(cmd.Context(), zentui.StartMenu, zen.Config{})
 		},
 	}
+	cmd.PersistentFlags().StringVar(&s.zenProject, "project", "", "Registered workspace project")
+	cmd.PersistentFlags().StringVar(&s.zenRepo, "repo", "", "Associate with a local repository or filter history by worktree")
+	cmd.PersistentFlags().StringVar(&s.zenLabel, "label", "", "Optional focus session label")
 	cmd.AddCommand(
 		&cobra.Command{Use: "aquarium", Short: "Open the interactive aquarium", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			return s.runZen(cmd.Context(), zentui.StartAquarium, zen.Config{})
@@ -87,10 +92,40 @@ func (s *state) zenHistoryCommand() *cobra.Command {
 }
 
 func (s *state) loadZen(ctx context.Context) (zen.Config, []zen.Session, error) {
+	if s.zenProject != "" && s.zenRepo != "" {
+		return zen.Config{}, nil, errors.New("choose --project or --repo, not both")
+	}
+	if s.zenProject != "" && s.deps.Workspace == nil {
+		return zen.Config{}, nil, errors.New("workspace storage unavailable")
+	}
 	if s.deps.Zen == nil {
 		return zen.Config{}, nil, errors.New("zen storage is unavailable")
 	}
-	return s.deps.Zen.Load(ctx)
+	config, sessions, err := s.deps.Zen.Load(ctx)
+	if err != nil {
+		return config, nil, err
+	}
+	if s.zenProject != "" {
+		p, e := s.deps.Workspace.Find(ctx, s.zenProject, false)
+		if e != nil {
+			return config, nil, e
+		}
+		sessions = workspace.ProjectSessions(sessions, p)
+	}
+	if s.zenRepo != "" {
+		st, e := s.deps.Git.Status(ctx, s.zenRepo)
+		if e != nil {
+			return config, nil, e
+		}
+		filtered := []zen.Session{}
+		for _, item := range sessions {
+			if item.WorktreePath == st.Root {
+				filtered = append(filtered, item)
+			}
+		}
+		sessions = filtered
+	}
+	return config, sessions, nil
 }
 
 func (s *state) runZen(ctx context.Context, mode zentui.StartMode, override zen.Config) error {
@@ -110,7 +145,42 @@ func (s *state) runZen(ctx context.Context, mode zentui.StartMode, override zen.
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	return zentui.Run(ctx, s.deps.In, s.human(), zentui.Options{Mode: mode, Config: config, Sessions: sessions, Repo: s.deps.Zen, NoColor: s.noColor})
+	if s.zenProject != "" && s.zenRepo != "" {
+		return errors.New("choose --project or --repo, not both")
+	}
+	association := zen.Session{Label: s.zenLabel}
+	if s.zenProject != "" {
+		p, e := s.deps.Workspace.Find(ctx, s.zenProject, false)
+		if e != nil {
+			return e
+		}
+		association.ProjectID, association.ProjectName, association.WorktreePath, association.RepositoryID = p.ID, p.Name, p.Root, p.RepositoryID
+	}
+	if s.zenRepo != "" {
+		st, e := s.deps.Git.Status(ctx, s.zenRepo)
+		if e != nil {
+			return e
+		}
+		association.WorktreePath, association.RepositoryID = st.Root, st.RepositoryID
+	}
+	enrich := func(ctx context.Context, item zen.Session) zen.Session {
+		if item.WorktreePath == "" {
+			return item
+		}
+		if item.Status == zen.StatusRunning || item.Status == zen.StatusPaused {
+			if item.GitSnapshotAt.IsZero() {
+				item.GitSnapshotAt = time.Now().UTC()
+				st, e := s.deps.Git.Status(ctx, item.WorktreePath)
+				if e == nil {
+					item.StartHead, item.BranchAtStart, item.RepositoryID = st.Head, st.Branch, st.RepositoryID
+				}
+			}
+		} else if item.RepositoryID != "" {
+			item.EndHead, item.BranchAtEnd, item.Observation = s.deps.Git.Observe(ctx, item.WorktreePath, item.StartHead, item.BranchAtStart)
+		}
+		return item
+	}
+	return zentui.Run(ctx, s.deps.In, s.human(), zentui.Options{Mode: mode, Config: config, Sessions: sessions, Repo: s.deps.Zen, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Context: association, Enrich: enrich})
 }
 
 func printZenStats(w io.Writer, stats zen.Statistics, onlyToday, onlyWeek bool) {
@@ -122,6 +192,7 @@ func printZenStats(w io.Writer, stats zen.Statistics, onlyToday, onlyWeek bool) 
 		for _, day := range stats.Week {
 			fmt.Fprintf(w, "  %s  %-9s %s\n", day.Date, strings.Repeat("█", min(20, int(day.FocusSeconds/900))), humanDuration(day.FocusSeconds))
 		}
+		fmt.Fprintf(w, "Total: %s · %d completed · average completed: %s\n", humanDuration(stats.WeekFocusSeconds), stats.WeekCompleted, humanDuration(stats.AverageCompleted))
 	}
 }
 
