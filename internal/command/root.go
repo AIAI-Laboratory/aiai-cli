@@ -16,6 +16,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
@@ -31,6 +32,7 @@ type Dependencies struct {
 	Version  string
 	Auth     auth.Authenticator
 	Updater  updater.Service
+	SSH      sshmanager.Manager
 	// Interactive can be injected by tests; production uses actual descriptors.
 	Interactive func() bool
 }
@@ -46,6 +48,7 @@ type state struct {
 	status  string
 	auth    *output.Auth
 	update  *output.Update
+	ssh     *output.SSH
 }
 
 func Run(ctx context.Context, args []string, deps Dependencies) int {
@@ -57,7 +60,7 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 	err := root.ExecuteContext(ctx)
 	code := ExitCode(err)
 	if s.json {
-		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update}
+		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, SSH: s.ssh}
 		if err != nil {
 			e.Status = "error"
 			e.Error = &output.Error{Code: code, Message: err.Error()}
@@ -76,9 +79,12 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 }
 
 func ExitCode(err error) int {
+	var processExit interface{ ExitCode() int }
 	switch {
 	case err == nil:
 		return 0
+	case errors.As(err, &processExit):
+		return processExit.ExitCode()
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return 130
 	case errors.Is(err, scaffold.ErrConflict):
@@ -86,6 +92,8 @@ func ExitCode(err error) int {
 	case errors.Is(err, scaffold.ErrExecution):
 		return 4
 	case errors.Is(err, auth.ErrIO):
+		return 4
+	case errors.Is(err, sshmanager.ErrStorage), errors.Is(err, sshmanager.ErrSSHMissing):
 		return 4
 	default:
 		return 2
@@ -109,7 +117,7 @@ func (s *state) human() io.Writer {
 func (s *state) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "aiai",
-		Short:         "Create projects from deterministic, offline templates",
+		Short:         "Create projects and manage local SSH connections",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -129,7 +137,7 @@ func (s *state) root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&s.json, "json", false, "Emit one JSON envelope (schema version 1)")
 	root.PersistentFlags().BoolVar(&s.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&s.verbose, "verbose", false, "Write diagnostic logs to stderr")
-	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand())
+	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.serverCommand(), s.sshCommand(), s.logCommand(), s.keyCommand())
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		s.status = "help"
@@ -164,9 +172,21 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 	if !s.interactive() {
 		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
 	}
-	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version}
-	result, plan, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
+	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
+	result, plan, action, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
 	s.plan, s.result = plan, result
+	if err == nil && action.SSHAlias != "" {
+		return s.deps.SSH.Connect(ctx, action.SSHAlias, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
+	}
+	if err == nil && action.GenerateKey != nil {
+		key, generateErr := s.deps.SSH.GenerateKey(ctx, *action.GenerateKey, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
+		if generateErr != nil {
+			return generateErr
+		}
+		fmt.Fprintln(s.human(), "\nSSH key generated:")
+		printKey(s.human(), key)
+		return nil
+	}
 	if result != nil && err == nil && !s.json {
 		fmt.Fprint(s.human(), output.ResultText(*result))
 	}

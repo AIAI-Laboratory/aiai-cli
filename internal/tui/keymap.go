@@ -2,10 +2,12 @@ package tui
 
 import (
 	"errors"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 )
 
@@ -55,8 +57,18 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen = m.previous
 		case about:
 			m.screen, m.cursor = home, 0
-		case authStarting, authWaiting, authResult, profile, logoutConfirmation, updatePrompt, updateResult:
+		case authStarting, authWaiting, authResult, profile, logoutConfirmation, updatePrompt, updateResult, serverLoading, logLoading, accessLogs, sshFailure, keyLoading:
 			m.screen, m.cursor = home, 0
+		case serverList:
+			m.screen, m.cursor = home, 0
+		case serverDetail:
+			m.screen, m.cursor = serverList, 0
+		case keyList:
+			m.screen, m.cursor = home, 0
+		case keyDetail:
+			m.screen, m.cursor = keyList, 0
+		case keyDeleteConfirmation:
+			m.screen, m.keyDeleteYes = keyDetail, false
 		case result:
 			return m, tea.Quit
 		}
@@ -208,8 +220,89 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.screen, m.cursor = home, 0
 			}
 		}
+	case serverList:
+		count := len(m.servers)
+		if count == 0 {
+			return m, nil
+		}
+		switch key {
+		case "up", "k":
+			m.cursor = (m.cursor + count - 1) % count
+		case "down", "j":
+			m.cursor = (m.cursor + 1) % count
+		case "enter":
+			if m.serverConnect {
+				m.sshAlias = m.servers[m.cursor].Alias
+				return m, tea.Quit
+			}
+			m.screen = serverDetail
+			m.viewport.GotoTop()
+		}
+	case serverDetail, sshFailure:
+		if key == "enter" {
+			if m.screen == serverDetail {
+				m.screen = serverList
+			} else {
+				m.screen = home
+			}
+			m.cursor = 0
+		}
+	case keyList:
+		count := len(m.keys)
+		if count == 0 {
+			return m, nil
+		}
+		switch key {
+		case "up", "k":
+			m.cursor = (m.cursor + count - 1) % count
+		case "down", "j":
+			m.cursor = (m.cursor + 1) % count
+		case "enter":
+			m.keyNotice = ""
+			m.screen = keyDetail
+			m.viewport.GotoTop()
+		}
+	case keyDetail:
+		if len(m.keys) == 0 {
+			return m, nil
+		}
+		selected := m.keys[m.cursor]
+		switch key {
+		case "c":
+			m.keyNotice = "Copying public key…"
+			return m, func() tea.Msg {
+				publicKey, err := m.sshManager.PublicKey(m.ctx, selected.PrivatePath)
+				if err == nil {
+					err = m.clipboard(publicKey)
+				}
+				return keyCopiedMsg{name: selected.Name, err: err}
+			}
+		case "d":
+			if selected.Managed {
+				m.keyDeleteYes = false
+				m.screen = keyDeleteConfirmation
+			}
+		case "enter":
+			m.screen = keyList
+		}
+	case keyDeleteConfirmation:
+		switch key {
+		case "up", "down", "j", "k", "tab":
+			m.keyDeleteYes = !m.keyDeleteYes
+		case "enter":
+			if !m.keyDeleteYes {
+				m.screen = keyDetail
+				return m, nil
+			}
+			selected := m.keys[m.cursor]
+			m.keyNotice = "Deleting managed key…"
+			return m, func() tea.Msg {
+				err := m.sshManager.RemoveKey(m.ctx, selected.PrivatePath)
+				return keyDeletedMsg{name: selected.Name, err: err}
+			}
+		}
 	}
-	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about || m.screen == authWaiting || m.screen == authResult || m.screen == profile || m.screen == updatePrompt || m.screen == updateResult {
+	if m.screen == preview || m.screen == result || m.screen == help || m.screen == about || m.screen == authWaiting || m.screen == authResult || m.screen == profile || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverDetail || m.screen == accessLogs || m.screen == sshFailure || m.screen == keyDetail || m.screen == keyDeleteConfirmation {
 		// Synchronize content before scrolling, since View has a value receiver.
 		m.resize()
 		m.viewport.SetContent(m.content())
@@ -223,6 +316,32 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	matches := screens.MatchingCommands(m.command.Value())
 	key := msg.String()
+	if key == "enter" {
+		fields := strings.Fields(m.command.Value())
+		if len(fields) == 2 && fields[0] == "/keygen" {
+			if m.sshManager == nil {
+				m.sshErr, m.screen = errors.New("SSH key management is unavailable"), sshFailure
+				return m, nil
+			}
+			request := sshmanager.KeyGenerateRequest{Name: fields[1], Type: "ed25519"}
+			m.action.GenerateKey = &request
+			m.command.SetValue("")
+			return m, tea.Quit
+		}
+		if len(fields) == 2 && fields[0] == "/keys" {
+			if m.sshManager == nil {
+				m.sshErr, m.screen = errors.New("SSH key management is unavailable"), sshFailure
+				return m, nil
+			}
+			query := fields[1]
+			m.command.SetValue("")
+			m.screen = keyLoading
+			return m, func() tea.Msg {
+				keys, err := m.sshManager.FindKeys(m.ctx, query)
+				return keysLoadedMsg{keys: keys, query: query, err: err}
+			}
+		}
+	}
 	// Keep j/k shortcuts until the user starts typing a command filter.
 	if m.command.Value() == "" {
 		if key == "j" {
@@ -260,6 +379,44 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch screens.HomeItems[selected].Name {
 		case "/init":
 			m.screen = selection
+		case "/servers", "/ssh":
+			if m.sshManager == nil {
+				m.sshErr, m.screen = errors.New("SSH management is unavailable"), sshFailure
+				break
+			}
+			connect := screens.HomeItems[selected].Name == "/ssh"
+			m.screen, m.serverConnect = serverLoading, connect
+			return m, func() tea.Msg {
+				servers, err := m.sshManager.List(m.ctx)
+				return serversLoadedMsg{servers: servers, err: err, connect: connect}
+			}
+		case "/logs":
+			if m.sshManager == nil {
+				m.sshErr, m.screen = errors.New("SSH management is unavailable"), sshFailure
+				break
+			}
+			m.screen = logLoading
+			return m, func() tea.Msg {
+				logs, err := m.sshManager.Logs(m.ctx, sshmanager.LogFilter{Limit: 50})
+				return logsLoadedMsg{logs: logs, err: err}
+			}
+		case "/keys":
+			if m.sshManager == nil {
+				m.sshErr, m.screen = errors.New("SSH key management is unavailable"), sshFailure
+				break
+			}
+			m.screen = keyLoading
+			return m, func() tea.Msg {
+				keys, err := m.sshManager.FindKeys(m.ctx, "")
+				return keysLoadedMsg{keys: keys, err: err}
+			}
+		case "/keygen":
+			// Keep the user on the command line and make the required argument
+			// obvious. This also makes selecting /keygen from the palette useful,
+			// instead of turning an incomplete command into an error screen.
+			m.command.SetValue("/keygen ")
+			m.command.CursorEnd()
+			m.cursor = 0
 		case "/login":
 			if m.auth == nil {
 				m.authText, m.authOK, m.screen = "Authentication is unavailable.", false, authResult

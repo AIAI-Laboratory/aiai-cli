@@ -18,7 +18,7 @@ func (m Model) View() tea.View {
 	m.resize()
 	content := m.content()
 	m.viewport.SetContent(content)
-	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult {
+	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.HasPrefix(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
@@ -120,6 +120,38 @@ func (m Model) content() string {
 			tag = m.updateRelease.TagName
 		}
 		body = screens.UpdateResult(tag, m.updateResultOK, m.updateErr, m.updateResultCursor, t)
+	case serverLoading:
+		body = t.Heading("Loading SSH servers…", "Reading local profiles from this computer.")
+	case serverList:
+		body = screens.ServerList(m.servers, m.cursor, m.serverConnect, t)
+	case serverDetail:
+		if len(m.servers) == 0 {
+			body = screens.SSHFailure(nil, t)
+		} else {
+			body = screens.ServerDetail(m.servers[m.cursor], t)
+		}
+	case logLoading:
+		body = t.Heading("Loading SSH history…", "Reading local access logs.")
+	case accessLogs:
+		body = screens.AccessLogs(m.logs, t)
+	case sshFailure:
+		body = screens.SSHFailure(m.sshErr, t)
+	case keyLoading:
+		body = t.Heading("Finding SSH keys…", "Scanning AIAI's managed key directory and ~/.ssh.")
+	case keyList:
+		body = screens.KeyList(m.keys, m.keyQuery, m.keyNotice, m.cursor, t)
+	case keyDetail:
+		if len(m.keys) == 0 {
+			body = screens.SSHFailure(nil, t)
+		} else {
+			body = screens.KeyDetail(m.keys[m.cursor], m.keyNotice, t)
+		}
+	case keyDeleteConfirmation:
+		if len(m.keys) == 0 {
+			body = screens.SSHFailure(nil, t)
+		} else {
+			body = screens.KeyDeleteConfirmation(m.keys[m.cursor], m.keyDeleteYes, t)
+		}
 	}
 	return lipgloss.NewStyle().Width(t.Width()).Render(body)
 }
@@ -191,6 +223,9 @@ func (m Model) toolbar() string {
 		help: "Help", about: "About", authStarting: "Authentication", authWaiting: "GitHub login",
 		authResult: "Authentication", profile: "Account", logoutConfirmation: "Sign out", loggingOut: "Sign out",
 		updatePrompt: "Update", updating: "Update", updateResult: "Update",
+		serverLoading: "SSH", serverList: "SSH servers", serverDetail: "SSH server",
+		logLoading: "SSH logs", accessLogs: "SSH logs", sshFailure: "SSH",
+		keyLoading: "SSH keys", keyList: "SSH keys", keyDetail: "SSH key", keyDeleteConfirmation: "Delete SSH key",
 	}
 	return t.Muted("AIAI / "+labels[m.screen]) + "\n\n"
 }
@@ -224,7 +259,23 @@ func (m Model) footer() string {
 		hint = "↑/↓ choose · enter confirm · esc back"
 	case updateResult:
 		hint = "↑/↓ choose · enter confirm · esc back"
-	case planning, applying, authStarting, loggingOut, updating:
+	case keyDetail:
+		hint = "c copy public key · d delete managed key · esc back"
+	case keyDeleteConfirmation:
+		hint = "↑/↓ choose · enter confirm · esc back"
+	case serverList:
+		if m.serverConnect {
+			hint = "↑/↓ choose · enter connect · esc back"
+		} else {
+			hint = "↑/↓ choose · enter details · esc back"
+		}
+	case serverDetail, sshFailure:
+		hint = "enter or esc back"
+	case accessLogs:
+		hint = "↑/↓ scroll · esc back"
+	case keyList:
+		hint = "↑/↓ choose · enter details · esc back"
+	case planning, applying, authStarting, loggingOut, updating, serverLoading, logLoading, keyLoading:
 		hint = "ctrl+c cancel safely"
 	}
 	if t.Width() < 48 {
