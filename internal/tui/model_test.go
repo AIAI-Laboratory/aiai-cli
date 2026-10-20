@@ -176,7 +176,8 @@ func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	calls := 0
 	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
 	defer m.cancel()
-	m, _ = press(m, '?')
+	m = typeCommand(m, "/help")
+	m, _ = press(m, tea.KeyEnter)
 	if m.screen != help {
 		t.Fatal(m.screen)
 	}
@@ -196,6 +197,73 @@ func TestWizardHelpResizeBackAndCancel(t *testing.T) {
 	m = next.(Model)
 	if m.err != context.Canceled || cmd == nil || calls != 0 {
 		t.Fatal("cancel did not stop without writing")
+	}
+}
+
+func TestTextInputsDoNotCaptureShortcuts(t *testing.T) {
+	calls := 0
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, nil, Options{})
+	defer m.cancel()
+
+	next, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	m = next.(Model)
+	if m.screen != home || m.command.Value() != "?" {
+		t.Fatal("home command input interpreted ? as a shortcut")
+	}
+	m.command.SetValue("")
+	m.screen = form
+	_ = m.setFocus(0)
+	m.inputs[0].SetValue("")
+	next, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	m = next.(Model)
+	if m.screen != form || m.inputs[0].Value() != "?" {
+		t.Fatal("form input interpreted ? as a shortcut")
+	}
+}
+
+func TestServerSearchAndBackNavigation(t *testing.T) {
+	calls := 0
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
+	defer m.cancel()
+	m.screen = serverList
+	m.servers = []sshmanager.Server{
+		{Alias: "production", Host: "prod.example.com", Username: "deploy"},
+		{Alias: "staging", Host: "staging.example.com", Username: "ubuntu"},
+	}
+
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != serverDetail || m.cursor != 1 {
+		t.Fatal("server selection did not open details")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != serverList || m.cursor != 1 {
+		t.Fatal("returning from details lost the selected server")
+	}
+
+	m, _ = press(m, '/')
+	if !m.searching {
+		t.Fatal("/ did not focus server search")
+	}
+	m = typeCommand(m, "production")
+	if got := m.visibleServers(); len(got) != 1 || got[0].Alias != "production" {
+		t.Fatalf("server filter returned %+v", got)
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.searching || m.search.Value() != "" || m.screen != serverList {
+		t.Fatal("Esc should clear search before leaving the list")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != home {
+		t.Fatal("second Esc should leave the list")
+	}
+
+	m.screen = keyList
+	m.keys = []sshmanager.Key{{Name: "laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:test", PrivatePath: "/keys/laptop", Managed: true}}
+	m, _ = press(m, '/')
+	m = typeCommand(m, "missing")
+	if len(m.visibleKeys()) != 0 || !strings.Contains(m.content(), "No keys match") {
+		t.Fatal("key filter did not show a useful empty state")
 	}
 }
 
@@ -265,10 +333,10 @@ func TestViewsFitTerminal(t *testing.T) {
 				m.authDevice = &auth.DeviceAuthorization{UserCode: "ABCD-EFGH", VerificationURI: "https://github.com/login/device"}
 				m.authText = "Signed in."
 				m.updateRelease = &updater.Release{TagName: "v0.2.0", Body: "Highlights"}
-				m.servers = []sshmanager.Server{{Alias: "production", Host: "example.com", Port: 22, Username: "deploy", CreatedAt: time.Now(), UpdatedAt: time.Now()}}
+				m.servers = []sshmanager.Server{{Alias: strings.Repeat("production-", 10), Host: strings.Repeat("host.", 30) + "example.com", Port: 22, Username: strings.Repeat("deploy", 15), CreatedAt: time.Now(), UpdatedAt: time.Now()}}
 				m.logs = []sshmanager.AccessLog{{ID: "log-1", ServerAlias: "production", Host: "example.com", Username: "deploy", StartedAt: time.Now(), Status: sshmanager.StatusSuccess}}
 				m.sshErr = fmt.Errorf("example SSH error")
-				m.keys = []sshmanager.Key{{Name: "laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:test", PrivatePath: "/keys/laptop", PublicPath: "/keys/laptop.pub", Managed: true}}
+				m.keys = []sshmanager.Key{{Name: strings.Repeat("laptop-", 12), Type: "ssh-ed25519", Fingerprint: "SHA256:" + strings.Repeat("x", 80), PrivatePath: "/keys/" + strings.Repeat("long-path/", 20), PublicPath: "/keys/laptop.pub", Managed: true}}
 				m.focus = 5
 				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				m = next.(Model)

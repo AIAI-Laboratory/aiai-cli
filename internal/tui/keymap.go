@@ -24,7 +24,26 @@ func (m *Model) setFocus(focus int) tea.Cmd {
 
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key == "?" {
+	if (m.screen == serverList || m.screen == keyList) && m.searching {
+		switch key {
+		case "esc":
+			m.clearSearch()
+			m.cursor = 0
+			return m, nil
+		case "enter":
+			m.search.Blur()
+			m.searching = false
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.search, cmd = m.search.Update(msg)
+			m.cursor = 0
+			m.viewport.GotoTop()
+			return m, cmd
+		}
+	}
+	textEditing := m.screen == home || (m.screen == form && m.focus < len(m.inputs))
+	if key == "?" && !textEditing {
 		if m.screen == help {
 			m.screen = m.previous
 		} else {
@@ -60,13 +79,23 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case authStarting, authWaiting, authResult, profile, logoutConfirmation, updatePrompt, updateResult, serverLoading, logLoading, accessLogs, sshFailure, keyLoading:
 			m.screen, m.cursor = home, 0
 		case serverList:
+			if m.search.Value() != "" {
+				m.clearSearch()
+				m.cursor = 0
+				return m, nil
+			}
 			m.screen, m.cursor = home, 0
 		case serverDetail:
-			m.screen, m.cursor = serverList, 0
+			m.screen = serverList
 		case keyList:
+			if m.search.Value() != "" {
+				m.clearSearch()
+				m.cursor = 0
+				return m, nil
+			}
 			m.screen, m.cursor = home, 0
 		case keyDetail:
-			m.screen, m.cursor = keyList, 0
+			m.screen = keyList
 		case keyDeleteConfirmation:
 			m.screen, m.keyDeleteYes = keyDetail, false
 		case result:
@@ -221,7 +250,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case serverList:
-		count := len(m.servers)
+		servers := m.visibleServers()
+		count := len(servers)
+		if key == "/" {
+			m.searching = true
+			return m, m.search.Focus()
+		}
 		if count == 0 {
 			return m, nil
 		}
@@ -232,7 +266,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor + 1) % count
 		case "enter":
 			if m.serverConnect {
-				m.sshAlias = m.servers[m.cursor].Alias
+				m.sshAlias = servers[m.cursor].Alias
 				return m, tea.Quit
 			}
 			m.screen = serverDetail
@@ -245,10 +279,17 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.screen = home
 			}
-			m.cursor = 0
+			if m.screen == home {
+				m.cursor = 0
+			}
 		}
 	case keyList:
-		count := len(m.keys)
+		keys := m.visibleKeys()
+		count := len(keys)
+		if key == "/" {
+			m.searching = true
+			return m, m.search.Focus()
+		}
 		if count == 0 {
 			return m, nil
 		}
@@ -263,10 +304,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoTop()
 		}
 	case keyDetail:
-		if len(m.keys) == 0 {
+		keys := m.visibleKeys()
+		if len(keys) == 0 {
 			return m, nil
 		}
-		selected := m.keys[m.cursor]
+		selected := keys[m.cursor]
 		switch key {
 		case "c":
 			m.keyNotice = "Copying public key…"
@@ -294,7 +336,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.screen = keyDetail
 				return m, nil
 			}
-			selected := m.keys[m.cursor]
+			selected := m.visibleKeys()[m.cursor]
 			m.keyNotice = "Deleting managed key…"
 			return m, func() tea.Msg {
 				err := m.sshManager.RemoveKey(m.ctx, selected.PrivatePath)

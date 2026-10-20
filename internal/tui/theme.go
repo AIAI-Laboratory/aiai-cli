@@ -54,6 +54,14 @@ func (t Theme) Keys(hint string) string {
 }
 
 func (t Theme) Choice(label, description string, selected bool) string {
+	labelWidth := max(1, t.width-2)
+	descriptionWidth := max(1, t.width-4)
+	if t.width >= 62 {
+		labelWidth = 16
+		descriptionWidth = max(1, t.width-20)
+	}
+	label = truncate(label, labelWidth)
+	description = truncate(description, descriptionWidth)
 	prefix := "  "
 	if selected {
 		prefix = "> "
@@ -66,6 +74,26 @@ func (t Theme) Choice(label, description string, selected bool) string {
 		return prefix + label + "\n  " + t.Muted(description) + "\n"
 	}
 	return prefix + lipgloss.NewStyle().Width(16).Render(label) + "  " + t.Muted(description) + "\n"
+}
+
+func truncate(text string, width int) string {
+	if lipgloss.Width(text) <= width {
+		return text
+	}
+	if width <= 1 {
+		return "…"
+	}
+	var result strings.Builder
+	used := 0
+	for _, r := range text {
+		cellWidth := lipgloss.Width(string(r))
+		if used+cellWidth > width-1 {
+			break
+		}
+		result.WriteRune(r)
+		used += cellWidth
+	}
+	return result.String() + "…"
 }
 
 func (t Theme) Step(current int) string {

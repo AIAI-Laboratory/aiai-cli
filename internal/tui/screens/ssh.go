@@ -9,7 +9,7 @@ import (
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 )
 
-func ServerList(servers []sshmanager.Server, cursor int, connect bool, t Theme) string {
+func ServerList(servers []sshmanager.Server, cursor int, connect bool, filter string, t Theme) string {
 	title, subtitle := "SSH servers", "Local profiles available on this computer."
 	if connect {
 		title, subtitle = "Connect with SSH", "Choose a server; AIAI will release the TUI before starting OpenSSH."
@@ -17,6 +17,11 @@ func ServerList(servers []sshmanager.Server, cursor int, connect bool, t Theme) 
 	var body strings.Builder
 	body.WriteString(t.Heading(title, subtitle))
 	if len(servers) == 0 {
+		if filter != "" {
+			body.WriteString(t.Muted("No servers match " + strconv.Quote(filter) + ".\n\n"))
+			body.WriteString("Press " + t.Accent("Esc") + " to clear the filter.")
+			return body.String()
+		}
 		body.WriteString(t.Muted("No SSH servers configured.\n\n"))
 		body.WriteString("Add one from your shell:\n\n")
 		body.WriteString(t.Accent("aiai server add production --host example.com --user deploy"))
@@ -37,13 +42,15 @@ func ServerDetail(server sshmanager.Server, t Theme) string {
 	if server.IdentityFile != "" {
 		key = server.IdentityFile
 	}
-	body := t.Heading(server.Alias, "SSH server profile") +
-		"Host: " + server.Host + "\n" +
-		"Port: " + strconv.Itoa(server.Port) + "\n" +
-		"User: " + server.Username + "\n" +
-		"Key: " + key + "\n"
+	body := t.Heading(server.Alias, server.Username+"@"+server.Host) +
+		t.Title("Connection") + "\n" +
+		"  Host  " + server.Host + "\n" +
+		"  Port  " + strconv.Itoa(server.Port) + "\n" +
+		"  User  " + server.Username + "\n\n" +
+		t.Title("Identity") + "\n" +
+		"  " + key + "\n"
 	if server.Description != "" {
-		body += "Description: " + server.Description + "\n"
+		body += "\n" + t.Title("Notes") + "\n  " + server.Description + "\n"
 	}
 	body += "\n" + t.Muted("Created: "+server.CreatedAt.Local().Format(time.RFC3339)) + "\n" +
 		t.Muted("Updated: "+server.UpdatedAt.Local().Format(time.RFC3339))
@@ -88,7 +95,7 @@ func SSHFailure(err error, t Theme) string {
 	return t.Heading("SSH", "Local server management") + t.Warn(message)
 }
 
-func KeyList(keys []sshmanager.Key, query, notice string, cursor int, t Theme) string {
+func KeyList(keys []sshmanager.Key, query, filter, notice string, cursor int, t Theme) string {
 	subtitle := "Managed keys and key pairs discovered in ~/.ssh."
 	if query != "" {
 		subtitle = "Results for " + strconv.Quote(query)
@@ -99,6 +106,11 @@ func KeyList(keys []sshmanager.Key, query, notice string, cursor int, t Theme) s
 		body.WriteString(t.Good(notice) + "\n\n")
 	}
 	if len(keys) == 0 {
+		if filter != "" {
+			body.WriteString(t.Muted("No keys match " + strconv.Quote(filter) + ".\n\n"))
+			body.WriteString("Press " + t.Accent("Esc") + " to clear the filter.")
+			return body.String()
+		}
 		body.WriteString(t.Muted("No matching SSH key pairs found.\n\n"))
 		body.WriteString("Generate one from the TUI command bar:\n\n")
 		body.WriteString(t.Accent("/keygen my-key"))

@@ -87,6 +87,8 @@ type Model struct {
 	confirmYes         bool
 	inputs             []textinput.Model
 	command            textinput.Model
+	search             textinput.Model
+	searching          bool
 	workspace          string
 	viewport           viewport.Model
 	width              int
@@ -216,6 +218,11 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	m.command.CharLimit = 64
 	m.styleInput(&m.command)
 	m.command.Focus()
+	m.search = textinput.New()
+	m.search.Prompt = ""
+	m.search.Placeholder = "Filter by name, host, user, fingerprint…"
+	m.search.CharLimit = 128
+	m.styleInput(&m.search)
 	for i, value := range []string{opts.Request.ProjectName, opts.Request.TargetDir, opts.Request.PackageName} {
 		input := textinput.New()
 		input.Prompt = ""
@@ -297,10 +304,46 @@ func (m Model) styleInput(input *textinput.Model) {
 func (m *Model) resize() {
 	width := m.theme().Width()
 	m.command.SetWidth(max(1, width-2))
+	m.search.SetWidth(max(1, width-12))
 	for i := range m.inputs {
 		m.inputs[i].SetWidth(max(1, width-4))
 	}
 	m.viewport.SetWidth(width)
 	top, bottom := m.chrome()
 	m.viewport.SetHeight(max(1, m.height-lipgloss.Height(top)-lipgloss.Height(bottom)-2))
+}
+
+func (m Model) visibleServers() []sshmanager.Server {
+	query := strings.ToLower(strings.TrimSpace(m.search.Value()))
+	if query == "" {
+		return m.servers
+	}
+	servers := make([]sshmanager.Server, 0, len(m.servers))
+	for _, server := range m.servers {
+		if strings.Contains(strings.ToLower(server.Alias+" "+server.Username+" "+server.Host+" "+server.Description), query) {
+			servers = append(servers, server)
+		}
+	}
+	return servers
+}
+
+func (m Model) visibleKeys() []sshmanager.Key {
+	query := strings.ToLower(strings.TrimSpace(m.search.Value()))
+	if query == "" {
+		return m.keys
+	}
+	keys := make([]sshmanager.Key, 0, len(m.keys))
+	for _, key := range m.keys {
+		haystack := key.Name + " " + key.Type + " " + key.Comment + " " + key.Fingerprint + " " + key.PrivatePath
+		if strings.Contains(strings.ToLower(haystack), query) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func (m *Model) clearSearch() {
+	m.search.SetValue("")
+	m.search.Blur()
+	m.searching = false
 }
