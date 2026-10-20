@@ -32,8 +32,9 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 ./bin/aiai
 ```
 
-The home screen provides a searchable command menu including **/init**, **/login**,
-**/whoami**, **/logout**, **/help**, **/about**, and **/quit**. Type `/` to filter
+The home screen provides a searchable command menu including **/init**, **/servers**,
+**/ssh**, **/logs**, **/keys**, **/keygen**, **/login**, **/whoami**, **/logout**, **/help**, **/about**,
+and **/quit**. Type `/` to filter
 commands, Tab to complete, and Enter to select. Esc clears the filter, then exits.
 Arrows navigate the menu; `j/k` also work when the command field is empty.
 
@@ -54,6 +55,63 @@ aiai whoami
 aiai logout
 aiai version
 ```
+
+## SSH server management
+
+AIAI can keep local SSH server profiles, reference existing private key files,
+launch the system OpenSSH client, and record connection history. These commands
+work completely offline and do not require an AIAI or GitHub login.
+
+```bash
+aiai server add production --host 192.168.1.100 --user ubuntu --port 22 --key ~/.ssh/id_ed25519
+aiai server add staging --host staging.example.com --user deploy
+aiai server list
+aiai server show production
+aiai server update production --port 2222 --description "Primary application host"
+aiai server key set production ~/.ssh/id_ed25519
+aiai server key show production
+aiai server key clear production
+aiai key generate laptop
+aiai key list
+aiai key find ed25519
+aiai key show laptop
+aiai ssh production
+aiai log list --server production --limit 20
+aiai server logs production
+aiai server remove production --yes
+```
+
+Profiles and access logs are stored in a private, versioned JSON file in the
+platform user configuration directory. AIAI stores only a normalized key path;
+it never copies or stores private key contents. Without an explicit key,
+OpenSSH retains its normal ssh-agent and configuration behavior. The referenced
+key is checked again immediately before every connection.
+
+Generated key pairs live in the private `keys` directory beside `ssh.json`, not
+inside JSON. `aiai key generate` delegates to the installed `ssh-keygen` and
+prompts for a passphrase in an interactive terminal. Non-interactive generation
+requires the explicit, less-secure `--no-passphrase` flag. Key search scans both
+the managed directory and `~/.ssh`, reading public keys only for metadata and
+fingerprints.
+
+Set `AIAI_CONFIG_DIR` to use a different writable location for `ssh.json` and
+managed keys, such as `AIAI_CONFIG_DIR="$PWD/.aiai" aiai` in a sandboxed
+terminal.
+
+`aiai ssh` executes the installed `ssh` binary directly with an argument array.
+It does not invoke a shell, weaken known-host checking, or automatically accept
+unknown host keys. Install the OpenSSH client and ensure `ssh` is in `PATH`.
+Interactive SSH deliberately rejects `--json`; all management and log commands
+support the existing versioned JSON envelope. See [SSH management and security](docs/ssh.md)
+for storage locations, platform notes, and the complete behavior.
+
+The TUI exposes `/servers` to browse profiles, `/ssh` to choose and connect to a
+server, `/logs` to inspect recent access history, `/keys [query]` to find keys,
+and `/keygen <name>` to generate a managed key. Before starting OpenSSH or
+`ssh-keygen`, the TUI exits its alternate screen and restores normal terminal
+input/output.
+In `/keys`, select a key and press `c` to copy its public key. Managed keys can
+be deleted with `d` after confirmation; standard `~/.ssh` keys are read-only.
 
 `aiai` and `aiai init` open the TUI only with a terminal. Non-interactive generation
 requires `--yes`; `--dry-run` never writes and does not require confirmation.

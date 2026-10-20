@@ -13,6 +13,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
@@ -35,6 +36,59 @@ func (f fakeExecutor) Apply(_ context.Context, p scaffold.Plan) (scaffold.Result
 type fakeAuth struct {
 	polls int
 	user  auth.User
+}
+
+type fakeSSHManager struct {
+	servers []sshmanager.Server
+	logs    []sshmanager.AccessLog
+	removed string
+}
+
+func (f *fakeSSHManager) Add(context.Context, sshmanager.AddRequest) (sshmanager.Server, error) {
+	return sshmanager.Server{}, nil
+}
+
+func (f *fakeSSHManager) List(context.Context) ([]sshmanager.Server, error) { return f.servers, nil }
+
+func (f *fakeSSHManager) Show(context.Context, string) (sshmanager.Server, error) {
+	return sshmanager.Server{}, nil
+}
+
+func (f *fakeSSHManager) Update(context.Context, string, sshmanager.UpdateRequest) (sshmanager.Server, error) {
+	return sshmanager.Server{}, nil
+}
+func (f *fakeSSHManager) Remove(context.Context, string) error { return nil }
+func (f *fakeSSHManager) SetKey(context.Context, string, string) (sshmanager.Server, error) {
+	return sshmanager.Server{}, nil
+}
+func (f *fakeSSHManager) ShowKey(context.Context, string) (string, error) { return "", nil }
+func (f *fakeSSHManager) ClearKey(context.Context, string) (sshmanager.Server, error) {
+	return sshmanager.Server{}, nil
+}
+func (f *fakeSSHManager) Connect(context.Context, string, sshmanager.Streams) error { return nil }
+func (f *fakeSSHManager) Logs(context.Context, sshmanager.LogFilter) ([]sshmanager.AccessLog, error) {
+	return f.logs, nil
+}
+
+func (f *fakeSSHManager) GenerateKey(context.Context, sshmanager.KeyGenerateRequest, sshmanager.Streams) (sshmanager.Key, error) {
+	return sshmanager.Key{}, nil
+}
+
+func (f *fakeSSHManager) FindKeys(context.Context, string) ([]sshmanager.Key, error) {
+	return []sshmanager.Key{{Name: "laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:test", PrivatePath: "/keys/laptop", PublicPath: "/keys/laptop.pub", Managed: true}}, nil
+}
+
+func (f *fakeSSHManager) FindKey(context.Context, string) (sshmanager.Key, error) {
+	return sshmanager.Key{Name: "laptop"}, nil
+}
+
+func (f *fakeSSHManager) PublicKey(context.Context, string) (string, error) {
+	return "ssh-ed25519 AQID laptop", nil
+}
+
+func (f *fakeSSHManager) RemoveKey(_ context.Context, value string) error {
+	f.removed = value
+	return nil
 }
 
 func (f *fakeAuth) StartLogin(context.Context, auth.LoginOptions) (auth.LoginStart, error) {
@@ -198,7 +252,7 @@ func TestCommandPalette(t *testing.T) {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
-		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult} {
+		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
 				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, nil, Options{NoColor: true})
@@ -211,6 +265,10 @@ func TestViewsFitTerminal(t *testing.T) {
 				m.authDevice = &auth.DeviceAuthorization{UserCode: "ABCD-EFGH", VerificationURI: "https://github.com/login/device"}
 				m.authText = "Signed in."
 				m.updateRelease = &updater.Release{TagName: "v0.2.0", Body: "Highlights"}
+				m.servers = []sshmanager.Server{{Alias: "production", Host: "example.com", Port: 22, Username: "deploy", CreatedAt: time.Now(), UpdatedAt: time.Now()}}
+				m.logs = []sshmanager.AccessLog{{ID: "log-1", ServerAlias: "production", Host: "example.com", Username: "deploy", StartedAt: time.Now(), Status: sshmanager.StatusSuccess}}
+				m.sshErr = fmt.Errorf("example SSH error")
+				m.keys = []sshmanager.Key{{Name: "laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:test", PrivatePath: "/keys/laptop", PublicPath: "/keys/laptop.pub", Managed: true}}
 				m.focus = 5
 				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				m = next.(Model)
@@ -226,6 +284,112 @@ func TestViewsFitTerminal(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSSHCommandPaletteFlows(t *testing.T) {
+	calls := 0
+	exitCode := 0
+	manager := &fakeSSHManager{
+		servers: []sshmanager.Server{{Alias: "production", Host: "example.com", Port: 22, Username: "deploy", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		logs:    []sshmanager.AccessLog{{ID: "log-1", ServerAlias: "production", Host: "example.com", Username: "deploy", StartedAt: time.Now(), Status: sshmanager.StatusSuccess, ExitCode: &exitCode}},
+	}
+	copied := ""
+
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{SSH: manager, Clipboard: func(value string) error {
+		copied = value
+		return nil
+	}})
+	defer m.cancel()
+	m = typeCommand(m, "/servers")
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != serverLoading || cmd == nil {
+		t.Fatal("/servers did not start loading")
+	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if m.screen != serverList || !strings.Contains(m.content(), "production") {
+		t.Fatal("/servers did not show profiles")
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != serverDetail || !strings.Contains(m.content(), "deploy") {
+		t.Fatal("server details did not open")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	m, _ = press(m, tea.KeyEscape)
+
+	m = typeCommand(m, "/ssh")
+	m, cmd = press(m, tea.KeyEnter)
+	if cmd == nil {
+		t.Fatalf("/ssh did not start loading, screen=%d command=%q", m.screen, m.command.Value())
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != serverList || !m.serverConnect {
+		t.Fatalf("/ssh did not open server chooser: screen=%d connect=%v", m.screen, m.serverConnect)
+	}
+	m, cmd = press(m, tea.KeyEnter)
+	if m.sshAlias != "production" || cmd == nil {
+		t.Fatal("/ssh did not select a server and quit")
+	}
+
+	m.sshAlias, m.screen = "", home
+	m = typeCommand(m, "/logs")
+	m, cmd = press(m, tea.KeyEnter)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != accessLogs || !strings.Contains(m.content(), "production") || !strings.Contains(m.content(), "success") {
+		t.Fatal("/logs did not show access history")
+	}
+	m.screen = home
+	m = typeCommand(m, "/keys laptop")
+	m, cmd = press(m, tea.KeyEnter)
+	if m.screen != keyLoading || cmd == nil {
+		t.Fatal("/keys query did not start key search")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.screen != keyList || !strings.Contains(m.content(), "laptop") {
+		t.Fatal("/keys did not show key results")
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != keyDetail || !strings.Contains(m.content(), "Copy public key") || !strings.Contains(m.content(), "Delete managed key") {
+		t.Fatal("key details did not show copy and delete actions")
+	}
+	m, cmd = press(m, 'c')
+	if cmd == nil {
+		t.Fatal("copy action did not start")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if copied != "ssh-ed25519 AQID laptop" || !strings.Contains(m.content(), "Public key copied") {
+		t.Fatalf("public key was not copied: %q", copied)
+	}
+	m, _ = press(m, 'd')
+	if m.screen != keyDeleteConfirmation {
+		t.Fatal("delete action did not request confirmation")
+	}
+	m, _ = press(m, tea.KeyDown)
+	m, cmd = press(m, tea.KeyEnter)
+	if cmd == nil {
+		t.Fatal("confirmed delete did not start")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if manager.removed != "/keys/laptop" || m.screen != keyList || !strings.Contains(m.content(), "Deleted managed key") {
+		t.Fatalf("managed key was not deleted: removed=%q screen=%d", manager.removed, m.screen)
+	}
+	m, _ = press(m, tea.KeyEscape)
+	m = typeCommand(m, "/keygen")
+	m, cmd = press(m, tea.KeyEnter)
+	if cmd != nil || m.screen != home || m.command.Value() != "/keygen " {
+		t.Fatalf("/keygen palette selection should prompt for a name, screen=%d command=%q", m.screen, m.command.Value())
+	}
+	m.command.SetValue("")
+	m = typeCommand(m, "/keygen deploy-key")
+	m, cmd = press(m, tea.KeyEnter)
+	if cmd == nil || m.action.GenerateKey == nil || m.action.GenerateKey.Name != "deploy-key" {
+		t.Fatal("/keygen did not request interactive key generation")
 	}
 }
 

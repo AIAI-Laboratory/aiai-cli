@@ -146,6 +146,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateResultCursor = 0
 		m.screen = updateResult
 		m.viewport.GotoTop()
+	case serversLoadedMsg:
+		if m.screen != serverLoading {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.sshErr, m.screen = msg.err, sshFailure
+			return m, nil
+		}
+		m.servers, m.serverConnect, m.cursor = msg.servers, msg.connect, 0
+		m.screen = serverList
+		m.viewport.GotoTop()
+	case logsLoadedMsg:
+		if m.screen != logLoading {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.sshErr, m.screen = msg.err, sshFailure
+			return m, nil
+		}
+		m.logs, m.screen = msg.logs, accessLogs
+		m.viewport.GotoTop()
+	case keysLoadedMsg:
+		if m.screen != keyLoading {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.sshErr, m.screen = msg.err, sshFailure
+			return m, nil
+		}
+		m.keys, m.keyQuery, m.cursor = msg.keys, msg.query, 0
+		m.screen = keyList
+		m.viewport.GotoTop()
+	case keyCopiedMsg:
+		if msg.err != nil {
+			m.keyNotice = "Copy failed: " + msg.err.Error()
+		} else {
+			m.keyNotice = "Public key copied: " + msg.name
+		}
+		m.screen = keyDetail
+		m.viewport.GotoTop()
+	case keyDeletedMsg:
+		if msg.err != nil {
+			m.keyNotice = "Delete failed: " + msg.err.Error()
+			m.screen = keyDetail
+			return m, nil
+		}
+		for i := range m.keys {
+			if m.keys[i].Name == msg.name {
+				m.keys = append(m.keys[:i], m.keys[i+1:]...)
+				break
+			}
+		}
+		if m.cursor >= len(m.keys) && m.cursor > 0 {
+			m.cursor--
+		}
+		m.keyNotice = "Deleted managed key: " + msg.name
+		m.screen = keyList
+		m.viewport.GotoTop()
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m.stop()

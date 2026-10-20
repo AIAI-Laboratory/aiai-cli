@@ -7,6 +7,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/command"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
@@ -31,12 +32,18 @@ func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, 
 	}
 	authService := auth.NewService(client, credentialStore, apiURL)
 	updaterService, _ := updater.NewService("", "", "aiai-cli/"+version, "")
+	sshRepository, err := sshmanager.NewJSONRepository("")
+	if err != nil {
+		return command.Dependencies{}, err
+	}
+	sshService := sshmanager.NewService(sshRepository, sshmanager.OpenSSHRunner{})
 	return command.Dependencies{
 		Planner:  project.Initializer{Engine: scaffold.Engine{Registry: r}},
 		Executor: scaffold.FileExecutor{},
 		Registry: r,
 		Auth:     authService,
 		Updater:  updaterService,
+		SSH:      sshService,
 		In:       in,
 		Out:      out,
 		Err:      errOut,

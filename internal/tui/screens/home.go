@@ -27,6 +27,11 @@ type Command struct {
 
 var HomeItems = []Command{
 	{"/init", "Initialize a Python project"},
+	{"/servers", "Browse local SSH server profiles"},
+	{"/ssh", "Connect to a configured SSH server"},
+	{"/logs", "View SSH access history"},
+	{"/keys", "Find managed and standard SSH keys"},
+	{"/keygen", "Generate a managed key: /keygen <name>"},
 	{"/login", "Sign in with GitHub"},
 	{"/whoami", "Show the signed-in account"},
 	{"/logout", "Remove the current session"},
@@ -38,6 +43,15 @@ var HomeItems = []Command{
 
 func MatchingCommands(query string) []int {
 	query = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(query)), "/")
+	commandQuery := query
+	if fields := strings.Fields(query); len(fields) > 0 {
+		commandQuery = fields[0]
+	}
+	for i, item := range HomeItems {
+		if strings.TrimPrefix(item.Name, "/") == commandQuery && commandQuery != "" {
+			return []int{i}
+		}
+	}
 	var matches []int
 	for i, item := range HomeItems {
 		if strings.Contains(strings.TrimPrefix(item.Name, "/"), query) || strings.Contains(strings.ToLower(item.Description), query) {

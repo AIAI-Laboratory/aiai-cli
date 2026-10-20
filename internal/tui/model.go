@@ -11,11 +11,13 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
@@ -42,7 +44,22 @@ const (
 	updatePrompt
 	updating
 	updateResult
+	serverLoading
+	serverList
+	serverDetail
+	logLoading
+	accessLogs
+	sshFailure
+	keyLoading
+	keyList
+	keyDetail
+	keyDeleteConfirmation
 )
+
+type Action struct {
+	SSHAlias    string
+	GenerateKey *sshmanager.KeyGenerateRequest
+}
 
 type Options struct {
 	Request   project.InitRequest
@@ -50,6 +67,8 @@ type Options struct {
 	StartInit bool
 	NoColor   bool
 	Version   string
+	SSH       sshmanager.Manager
+	Clipboard func(string) error
 }
 
 type Model struct {
@@ -89,6 +108,18 @@ type Model struct {
 	updateErr          error
 	updateResultOK     bool
 	updateResultCursor int
+	sshManager         sshmanager.Manager
+	servers            []sshmanager.Server
+	logs               []sshmanager.AccessLog
+	serverConnect      bool
+	sshAlias           string
+	sshErr             error
+	keys               []sshmanager.Key
+	keyQuery           string
+	keyNotice          string
+	keyDeleteYes       bool
+	clipboard          func(string) error
+	action             Action
 }
 
 type (
@@ -131,22 +162,49 @@ type (
 	updateFinishedMsg struct {
 		err error
 	}
+	serversLoadedMsg struct {
+		servers []sshmanager.Server
+		err     error
+		connect bool
+	}
+	logsLoadedMsg struct {
+		logs []sshmanager.AccessLog
+		err  error
+	}
+	keysLoadedMsg struct {
+		keys  []sshmanager.Key
+		query string
+		err   error
+	}
+	keyCopiedMsg struct {
+		name string
+		err  error
+	}
+	keyDeletedMsg struct {
+		name string
+		err  error
+	}
 )
 
 func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, opts Options) Model {
 	ctx, cancel := context.WithCancel(ctx)
 	m := Model{
-		ctx:       ctx,
-		cancel:    cancel,
-		planner:   planner,
-		executor:  executor,
-		auth:      authenticator,
-		updater:   updaterService,
-		templates: metadata,
-		opts:      opts,
-		width:     80,
-		height:    30,
-		viewport:  viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
+		ctx:        ctx,
+		cancel:     cancel,
+		planner:    planner,
+		executor:   executor,
+		auth:       authenticator,
+		updater:    updaterService,
+		sshManager: opts.SSH,
+		clipboard:  opts.Clipboard,
+		templates:  metadata,
+		opts:       opts,
+		width:      80,
+		height:     30,
+		viewport:   viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
+	}
+	if m.clipboard == nil {
+		m.clipboard = clipboard.WriteAll
 	}
 	m.workspace, _ = os.Getwd()
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(m.workspace, home+string(os.PathSeparator)) {
@@ -176,7 +234,7 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	return m
 }
 
-func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, error) {
+func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, Action, error) {
 	m := NewModel(ctx, planner, executor, metadata, authenticator, updaterService, opts)
 	defer m.cancel()
 	options := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out), tea.WithoutSignalHandler()}
@@ -195,10 +253,13 @@ func Run(ctx context.Context, planner project.Planner, executor scaffold.Executo
 	}()
 	final, err := p.Run()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: terminal: %v", scaffold.ErrExecution, err)
+		return nil, nil, Action{}, fmt.Errorf("%w: terminal: %v", scaffold.ErrExecution, err)
 	}
 	f := final.(Model)
-	return f.result, f.plan, f.err
+	if f.action.SSHAlias == "" {
+		f.action.SSHAlias = f.sshAlias
+	}
+	return f.result, f.plan, f.action, f.err
 }
 
 func (m Model) Init() tea.Cmd {
