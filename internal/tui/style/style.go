@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	Accent = "#ce4254"
+	Accent = "#FF3B30"
 	Muted  = "#767676"
 	Good   = "#208457"
 	Info   = "#3579b3"
