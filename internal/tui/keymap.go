@@ -62,6 +62,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoTop()
 				return m, nil
 			}
+			if m.homeCategory != "" {
+				m.homeCategory = ""
+				m.cursor = 0
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			return m, tea.Quit
 		case selection:
 			m.screen, m.cursor = home, 0
@@ -164,7 +170,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case confirmation:
 		switch key {
-		case "up", "down", "j", "k", "tab":
+		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
 			m.confirmYes = !m.confirmYes
 		case "enter":
 			if !m.confirmYes {
@@ -173,7 +179,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.screen = applying
 			plan := *m.plan
-			return m, func() tea.Msg { r, err := m.executor.Apply(m.ctx, plan); return appliedMsg{r, err} }
+			return m, m.withProgress(func() tea.Msg { r, err := m.executor.Apply(m.ctx, plan); return appliedMsg{r, err} })
 		}
 	case result:
 		if key == "enter" {
@@ -185,7 +191,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case logoutConfirmation:
 		switch key {
-		case "up", "down", "j", "k", "tab":
+		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
 			m.logoutYes = !m.logoutYes
 		case "enter":
 			if !m.logoutYes {
@@ -193,10 +199,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.screen = loggingOut
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				result, err := m.auth.Logout(m.ctx)
 				return authLogoutMsg{result: result, err: err}
-			}
+			})
 		}
 	case updatePrompt:
 		switch key {
@@ -214,10 +220,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.screen = updating
 				m.updateStep = "Downloading update from GitHub…"
 				release := *m.updateRelease
-				return m, func() tea.Msg {
+				return m, m.withProgress(func() tea.Msg {
 					err := m.updater.ApplyUpdate(m.ctx, release)
 					return updateFinishedMsg{err: err}
-				}
+				})
 			case 1:
 				if m.updater != nil {
 					_ = m.updater.Postpone(*m.updateRelease, false)
@@ -233,7 +239,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case updateResult:
 		if m.updateResultOK {
 			switch key {
-			case "up", "down", "j", "k", "tab":
+			case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
 				m.updateResultCursor = (m.updateResultCursor + 1) % 2
 			case "enter":
 				if m.updateResultCursor == 0 {
@@ -329,7 +335,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case keyDeleteConfirmation:
 		switch key {
-		case "up", "down", "j", "k", "tab":
+		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
 			m.keyDeleteYes = !m.keyDeleteYes
 		case "enter":
 			if !m.keyDeleteYes {
@@ -356,7 +362,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	matches := screens.MatchingCommands(m.command.Value())
+	matches := screens.VisibleCommands(m.command.Value(), m.homeCategory)
+	categories := screens.Categories()
+	rootCommands := screens.RootCommands()
+	browsingRoot := m.command.Value() == "" && m.homeCategory == ""
 	key := msg.String()
 	if key == "enter" {
 		fields := strings.Fields(m.command.Value())
@@ -378,10 +387,10 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			query := fields[1]
 			m.command.SetValue("")
 			m.screen = keyLoading
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				keys, err := m.sshManager.FindKeys(m.ctx, query)
 				return keysLoadedMsg{keys: keys, query: query, err: err}
-			}
+			})
 		}
 	}
 	// Keep j/k shortcuts until the user starts typing a command filter.
@@ -395,22 +404,36 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	switch key {
 	case "up", "down":
-		if len(matches) > 0 {
+		count := len(matches)
+		if browsingRoot {
+			count = len(categories) + len(rootCommands)
+		}
+		if count > 0 {
 			delta := 1
 			if key == "up" {
 				delta = -1
 			}
-			m.cursor = (m.cursor + delta + len(matches)) % len(matches)
+			m.cursor = (m.cursor + delta + count) % count
 		}
 		return m, nil
 	case "tab":
-		if len(matches) > 0 {
+		if !browsingRoot && len(matches) > 0 {
 			m.command.SetValue(screens.HomeItems[matches[m.cursor]].Name)
 			m.command.CursorEnd()
 			m.cursor = 0
 		}
 		return m, nil
 	case "enter":
+		if browsingRoot {
+			if m.cursor < len(categories) {
+				m.homeCategory = categories[m.cursor]
+				m.cursor = 0
+				m.viewport.GotoTop()
+				return m, nil
+			}
+			matches = []int{rootCommands[m.cursor-len(categories)]}
+			m.cursor = 0
+		}
 		if len(matches) == 0 {
 			return m, nil
 		}
@@ -428,30 +451,30 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			connect := screens.HomeItems[selected].Name == "/ssh"
 			m.screen, m.serverConnect = serverLoading, connect
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				servers, err := m.sshManager.List(m.ctx)
 				return serversLoadedMsg{servers: servers, err: err, connect: connect}
-			}
+			})
 		case "/logs":
 			if m.sshManager == nil {
 				m.sshErr, m.screen = errors.New("SSH management is unavailable"), sshFailure
 				break
 			}
 			m.screen = logLoading
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				logs, err := m.sshManager.Logs(m.ctx, sshmanager.LogFilter{Limit: 50})
 				return logsLoadedMsg{logs: logs, err: err}
-			}
+			})
 		case "/keys":
 			if m.sshManager == nil {
 				m.sshErr, m.screen = errors.New("SSH key management is unavailable"), sshFailure
 				break
 			}
 			m.screen = keyLoading
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				keys, err := m.sshManager.FindKeys(m.ctx, "")
 				return keysLoadedMsg{keys: keys, err: err}
-			}
+			})
 		case "/keygen":
 			// Keep the user on the command line and make the required argument
 			// obvious. This also makes selecting /keygen from the palette useful,
@@ -465,20 +488,20 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 			m.screen = authStarting
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				start, err := m.auth.StartLogin(m.ctx, auth.LoginOptions{})
 				return authStartedMsg{start: start, err: err}
-			}
+			})
 		case "/whoami":
 			if m.auth == nil {
 				m.authText, m.authOK, m.screen = "Authentication is unavailable.", false, authResult
 				break
 			}
 			m.screen = authStarting
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				result, err := m.auth.WhoAmI(m.ctx)
 				return authWhoamiMsg{result: result, err: err}
-			}
+			})
 		case "/logout":
 			if m.authUser == nil {
 				m.authText, m.authOK, m.screen = "Already signed out.", true, authResult
@@ -494,10 +517,16 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.screen = updating
 			m.updateStep = "Checking GitHub for updates…"
-			return m, func() tea.Msg {
+			return m, m.withProgress(func() tea.Msg {
 				res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, true)
 				return updateCheckedMsg{result: res, err: err, manual: true}
-			}
+			})
+		case "/zen":
+			m.action.Zen = true
+			return m, tea.Quit
+		case "/monitor":
+			m.action.Monitor = true
+			return m, tea.Quit
 		case "/help":
 			m.previous, m.screen = home, help
 		case "/about":

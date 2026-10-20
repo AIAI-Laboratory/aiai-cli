@@ -9,7 +9,7 @@ func InitForm(inputs []string, focus int, force, dryRun bool, t Theme) string {
 	for i, input := range inputs {
 		prefix := "  "
 		if i == focus {
-			prefix = "> "
+			prefix = t.Accent("> ")
 		}
 		label := t.Title(labels[i])
 		if i == focus {
@@ -24,10 +24,11 @@ func InitForm(inputs []string, focus int, force, dryRun bool, t Theme) string {
 			s += "\n"
 		}
 	}
-	for i, item := range []string{fmt.Sprintf("[%s] Replace conflicting files (--force)", mark(force)), fmt.Sprintf("[%s] Preview only (--dry-run)", mark(dryRun)), "Preview project"} {
+	s += "\n" + t.Section("Options") + "\n"
+	for i, item := range []string{fmt.Sprintf("[%s] Replace conflicting files (--force)", mark(force)), fmt.Sprintf("[%s] Preview only (--dry-run)", mark(dryRun)), "Continue to preview"} {
 		prefix := "  "
 		if focus == i+3 {
-			prefix = "> "
+			prefix = t.Accent("> ")
 		}
 		if focus == i+3 {
 			item = t.Accent(item)

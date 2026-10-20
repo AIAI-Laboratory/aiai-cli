@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -59,6 +59,8 @@ const (
 type Action struct {
 	SSHAlias    string
 	GenerateKey *sshmanager.KeyGenerateRequest
+	Zen         bool
+	Monitor     bool
 }
 
 type Options struct {
@@ -87,9 +89,10 @@ type Model struct {
 	confirmYes         bool
 	inputs             []textinput.Model
 	command            textinput.Model
+	homeCategory       string
 	search             textinput.Model
 	searching          bool
-	workspace          string
+	progress           spinner.Model
 	viewport           viewport.Model
 	width              int
 	height             int
@@ -205,22 +208,22 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 		height:     30,
 		viewport:   viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
 	}
+	m.progress = spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	if !opts.NoColor {
+		m.progress.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F56"))
+	}
 	if m.clipboard == nil {
 		m.clipboard = clipboard.WriteAll
 	}
-	m.workspace, _ = os.Getwd()
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(m.workspace, home+string(os.PathSeparator)) {
-		m.workspace = "~" + strings.TrimPrefix(m.workspace, home)
-	}
 	m.command = textinput.New()
 	m.command.Prompt = ""
-	m.command.Placeholder = "Type a command, or choose below…"
+	m.command.Placeholder = "Search commands…"
 	m.command.CharLimit = 64
 	m.styleInput(&m.command)
 	m.command.Focus()
 	m.search = textinput.New()
-	m.search.Prompt = ""
-	m.search.Placeholder = "Filter by name, host, user, fingerprint…"
+	m.search.Prompt = "/ "
+	m.search.Placeholder = "Search name, host, user, or fingerprint…"
 	m.search.CharLimit = 128
 	m.styleInput(&m.search)
 	for i, value := range []string{opts.Request.ProjectName, opts.Request.TargetDir, opts.Request.PackageName} {
@@ -290,6 +293,19 @@ func (m Model) theme() Theme {
 	return NewTheme(max(1, min(100, m.width-4)), m.opts.NoColor)
 }
 
+func (m Model) busy() bool {
+	switch m.screen {
+	case planning, applying, authStarting, authWaiting, loggingOut, updating, serverLoading, logLoading, keyLoading:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m Model) withProgress(cmd tea.Cmd) tea.Cmd {
+	return tea.Batch(cmd, m.progress.Tick)
+}
+
 func (m Model) styleInput(input *textinput.Model) {
 	styles := textinput.Styles{}
 	if !m.opts.NoColor {
@@ -303,8 +319,8 @@ func (m Model) styleInput(input *textinput.Model) {
 
 func (m *Model) resize() {
 	width := m.theme().Width()
-	m.command.SetWidth(max(1, width-2))
-	m.search.SetWidth(max(1, width-12))
+	m.command.SetWidth(max(1, width-6))
+	m.search.SetWidth(max(1, width-6))
 	for i := range m.inputs {
 		m.inputs[i].SetWidth(max(1, width-4))
 	}

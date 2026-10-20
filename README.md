@@ -32,18 +32,18 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 ./bin/aiai
 ```
 
-The home screen provides a searchable command menu including **/init**, **/servers**,
-**/ssh**, **/logs**, **/keys**, **/keygen**, **/login**, **/whoami**, **/logout**, **/help**, **/about**,
-and **/quit**. Type to filter commands, Tab to complete, and Enter to select.
-Esc clears the filter, then exits.
-Arrows navigate the menu; `j/k` also work when the command field is empty.
+The home screen groups commands into Project, SSH, Account, and AIAI categories;
+**/help** and **/quit** remain directly accessible. Enter opens a category and
+Esc returns home. Typing searches every command immediately, Tab completes, and
+Enter selects. Arrows navigate the menu; `j/k` also work while the command field
+is empty.
 
 The wizard selects a template, collects project fields, previews file operations,
 and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
 select, Esc to return, and Ctrl+C to cancel. Use `/help` while typing a command;
 `?` opens contextual help elsewhere. The layout adapts to
-smaller terminals and keeps the focused field visible. The AIAI mark is rendered
-with terminal block characters; vector and raster versions live in
+smaller terminals and keeps the focused field visible. Vector and raster versions
+of the AIAI mark live in
 [assets/aiai-logo.svg](assets/aiai-logo.svg) and [assets/aiai-logo.png](assets/aiai-logo.png).
 
 ```bash
@@ -56,6 +56,80 @@ aiai whoami
 aiai logout
 aiai version
 ```
+
+## AIAI Zen
+
+**AIAI Zen — A little peace inside your terminal.** Zen combines an animated,
+offline terminal aquarium with an accurate Pomodoro tracker. Fish move
+independently, follow dropped food, avoid boundaries, and share the water with
+bubbles and seaweed. The simulation is bounded and targets roughly 10–12 FPS;
+reduced-motion mode lowers the update rate.
+
+```bash
+aiai zen
+aiai zen aquarium
+aiai zen focus
+aiai zen focus --work 25m --break 5m --long-break 15m --cycles 4
+aiai zen stats --today
+aiai zen stats --week
+aiai zen history
+aiai zen settings
+aiai zen stats --json
+```
+
+In the aquarium, use `f` to feed, `a`/`d` to add or remove fish, Space to pause
+only the animation, and `+`/`-` to adjust its speed. During focus, `p` pauses the
+timer independently. Exiting an active focus session asks for confirmation and
+saves actual active time as interrupted; it never counts as a completed
+Pomodoro. The next focus or break stage starts manually unless auto-start is
+enabled in settings.
+
+From `/zen`, choose Start Focus, then Default Pomodoro or Custom. Custom lets
+you adjust focus, short break, long break, and cycles with arrow keys before
+starting. Your selection is saved for subsequent visits.
+
+Zen stores preferences and session history in a private, versioned `zen.json`
+next to AIAI's other configuration files, respecting `AIAI_CONFIG_DIR`. Timestamps
+are stored in UTC and displayed in local time. Writes use cross-process locking
+and atomic replacement. Corrupt or unsupported data is reported and never
+silently overwritten. `--json` is supported for stats and history, and is
+deliberately rejected for interactive aquarium modes. The Home TUI exposes
+`/zen` under the AIAI category.
+
+## System Monitor
+
+```bash
+aiai monitor
+aiai monitor --interval 2s
+aiai system info
+aiai system info --json
+```
+
+Open `/monitor` from the AIAI category in Home. The monitor shows live CPU and
+per-core usage, RAM/available memory, swap, disk partitions and I/O rates,
+per-interface upload/download charts, and a process table. Wide terminals show
+side-by-side panels; compact terminals prioritize CPU, RAM, and processes.
+Press Tab to focus another panel, then arrows to scroll disk mounts or select
+a network interface. Left/right (or `[`/`]`) select an interface directly.
+
+Use `↑/↓` or `j/k` to select a process, `c`/`m`/`p` to sort CPU/RAM/PID, `/` to
+search names or PIDs, Space to pause/resume sampling, `r` to refresh, `?` for
+help, and `q`/Esc to return. Search input captures printable shortcuts as text.
+When launched from Home, exiting returns to Home.
+
+Sampling defaults to one second (`--interval` accepts 250ms–10s), runs outside
+the rendering loop, and never overlaps. Charts retain at most 60 samples.
+CPU and throughput use counter deltas; the first sample and unsupported or
+inaccessible metrics display as unavailable (`null` in JSON). Process CPU uses
+the htop convention of 100% per fully occupied logical core. The one-shot
+snapshot takes two samples so rate fields can have a valid baseline.
+
+The collector uses `github.com/shirou/gopsutil/v4` on macOS, Windows, and Linux
+without requiring administrator privileges or CGO. Monitoring is read-only:
+no kill actions, full command lines, environment variables, or saved metrics.
+`NO_COLOR` / `--no-color` preserve the terminal's foreground/background palette.
+Home startup does not collect metrics. Shared APFS volumes can show the same
+capacity; aggregated disk I/O reports the device counters exposed by the OS.
 
 ## SSH server management
 
@@ -113,9 +187,10 @@ and `/keygen <name>` to generate a managed key. Before starting OpenSSH or
 input/output.
 In `/keys`, select a key and press `c` to copy its public key. Managed keys can
 be deleted with `d` after confirmation; standard `~/.ssh` keys are read-only.
-On the server and key lists, press `/` to focus the filter. Esc clears the
-filter, then returns to the previous screen on a subsequent press. Enter keeps
-the filter and returns to list navigation.
+On the server and key lists, press `/` to focus search. Esc clears the search,
+then returns to the previous screen on a subsequent press. Enter keeps the query
+and returns to list navigation. Servers use a single-column list; Enter opens
+details. Access logs use aligned columns where space permits.
 
 `aiai` and `aiai init` open the TUI only with a terminal. Non-interactive generation
 requires `--yes`; `--dry-run` never writes and does not require confirmation.
@@ -195,7 +270,7 @@ no automatic backup. `--force` applies only to files listed by the template.
 ## Output contract
 
 `--json` emits one object with `schema_version: 1`, `status`, and optional `plan`,
-`result`, `auth`, `error`, and `version` fields. A plan contains destination,
+`result`, `auth`, `ssh`, `zen`, `system`, `error`, and `version` fields. A plan contains destination,
 template ID and version, warnings, and sorted operations (`path`, `action`, numeric `mode`).
 File bodies and internal hashes are excluded. Results report completed and skipped
 paths plus setup commands. Errors include a numeric exit code and message, with

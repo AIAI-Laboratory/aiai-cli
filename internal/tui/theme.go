@@ -37,6 +37,12 @@ func (t Theme) Warn(text string) string   { return t.paint(text, "#C99739", fals
 func (t Theme) Title(text string) string  { return lipgloss.NewStyle().Bold(true).Render(text) }
 func (t Theme) Rule() string              { return t.Muted(strings.Repeat("─", max(1, t.width))) }
 
+func (t Theme) Section(title string) string {
+	return t.Muted(strings.ToUpper(title))
+}
+
+func (t Theme) Truncate(text string, width int) string { return truncate(text, width) }
+
 func (t Theme) Heading(title, subtitle string) string {
 	return t.Title(title) + "\n" + t.Muted(subtitle) + "\n\n"
 }

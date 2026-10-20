@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 )
 
@@ -28,32 +30,41 @@ func ServerList(servers []sshmanager.Server, cursor int, connect bool, filter st
 		return body.String()
 	}
 	for i, server := range servers {
-		destination := server.Username + "@" + server.Host
-		if server.Port != 22 {
-			destination += ":" + strconv.Itoa(server.Port)
-		}
-		body.WriteString(t.Choice(server.Alias, destination, i == cursor))
+		body.WriteString(t.Choice(server.Alias, serverDestination(server), i == cursor))
 	}
 	return strings.TrimSuffix(body.String(), "\n")
 }
 
 func ServerDetail(server sshmanager.Server, t Theme) string {
+	return t.Heading(server.Alias, serverDestination(server)) + serverDetailBody(server, t, t.Width())
+}
+
+func serverDestination(server sshmanager.Server) string {
+	destination := server.Username + "@" + server.Host
+	if server.Port != 22 {
+		destination += ":" + strconv.Itoa(server.Port)
+	}
+	return destination
+}
+
+func serverDetailBody(server sshmanager.Server, t Theme, width int) string {
 	key := "OpenSSH config / ssh-agent"
 	if server.IdentityFile != "" {
 		key = server.IdentityFile
 	}
-	body := t.Heading(server.Alias, server.Username+"@"+server.Host) +
-		t.Title("Connection") + "\n" +
-		"  Host  " + server.Host + "\n" +
-		"  Port  " + strconv.Itoa(server.Port) + "\n" +
-		"  User  " + server.Username + "\n\n" +
-		t.Title("Identity") + "\n" +
-		"  " + key + "\n"
+	valueWidth := max(1, width-12)
+	body := t.Section("Connection") + "\n" +
+		"  Host      " + t.Truncate(server.Host, valueWidth) + "\n" +
+		"  User      " + t.Truncate(server.Username, valueWidth) + "\n" +
+		"  Port      " + strconv.Itoa(server.Port) + "\n\n" +
+		t.Section("Identity") + "\n" +
+		"  " + t.Truncate(key, max(1, width-2)) + "\n"
 	if server.Description != "" {
-		body += "\n" + t.Title("Notes") + "\n  " + server.Description + "\n"
+		body += "\n" + t.Section("Notes") + "\n  " + t.Truncate(server.Description, max(1, width-2)) + "\n"
 	}
-	body += "\n" + t.Muted("Created: "+server.CreatedAt.Local().Format(time.RFC3339)) + "\n" +
-		t.Muted("Updated: "+server.UpdatedAt.Local().Format(time.RFC3339))
+	if !server.UpdatedAt.IsZero() {
+		body += "\n" + t.Muted("Updated "+server.UpdatedAt.Local().Format("2006-01-02 15:04"))
+	}
 	return body
 }
 
@@ -61,17 +72,27 @@ func AccessLogs(logs []sshmanager.AccessLog, t Theme) string {
 	var body strings.Builder
 	body.WriteString(t.Heading("SSH access history", "Newest sessions first; timestamps use local time."))
 	if len(logs) == 0 {
-		body.WriteString(t.Muted("No SSH access logs found."))
+		body.WriteString(t.Muted("No SSH sessions recorded yet.\n\n"))
+		body.WriteString("Connect with " + t.Accent("/ssh") + " and completed sessions will appear here.")
 		return body.String()
 	}
-	for _, entry := range logs {
-		status := t.Warn(entry.Status)
-		switch entry.Status {
-		case sshmanager.StatusSuccess:
-			status = t.Good(entry.Status)
-		case sshmanager.StatusFailed:
-			status = t.Accent(entry.Status)
+	if t.Width() >= 72 {
+		serverWidth := min(18, max(12, t.Width()/5))
+		destinationWidth := max(16, t.Width()-serverWidth-41)
+		fmt.Fprintf(&body, "%s  %s  %s  %s  %s\n",
+			logCell(t.Section("Status"), 9), logCell(t.Section("Server"), serverWidth),
+			logCell(t.Section("Destination"), destinationWidth), logCell(t.Section("Started"), 16), logCell(t.Section("Duration"), 8))
+		body.WriteString(t.Muted(strings.Repeat("─", t.Width())) + "\n")
+		for _, entry := range logs {
+			fmt.Fprintf(&body, "%s  %s  %s  %s  %s\n",
+				logCell(logStatus(entry, t), 9), logCell(t.Truncate(entry.ServerAlias, serverWidth), serverWidth),
+				logCell(t.Truncate(entry.Username+"@"+entry.Host, destinationWidth), destinationWidth),
+				logCell(formatLogTime(entry.StartedAt), 16), logCell(logDuration(entry), 8))
 		}
+		return strings.TrimSuffix(body.String(), "\n")
+	}
+	for _, entry := range logs {
+		status := logStatus(entry, t)
 		duration := "-"
 		if entry.DurationMS != nil {
 			duration = (time.Duration(*entry.DurationMS) * time.Millisecond).Round(time.Millisecond).String()
@@ -82,9 +103,49 @@ func AccessLogs(logs []sshmanager.AccessLog, t Theme) string {
 		}
 		fmt.Fprintf(&body, "%s  %s\n", t.Title(entry.ServerAlias), status)
 		fmt.Fprintf(&body, "  %s@%s\n", entry.Username, entry.Host)
-		fmt.Fprintf(&body, "  %s · duration %s · exit %s\n\n", t.Muted(entry.StartedAt.Local().Format("2006-01-02 15:04:05 MST")), duration, exit)
+		fmt.Fprintf(&body, "  %s · %s · exit %s\n\n", t.Muted(formatLogTime(entry.StartedAt)), duration, exit)
 	}
 	return strings.TrimSuffix(body.String(), "\n")
+}
+
+func logCell(value string, width int) string {
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).Render(value)
+}
+
+func logStatus(entry sshmanager.AccessLog, t Theme) string {
+	label := "• " + entry.Status
+	switch entry.Status {
+	case sshmanager.StatusSuccess:
+		return t.Good("✓ success")
+	case sshmanager.StatusFailed:
+		if entry.ExitCode != nil {
+			label = "× failed"
+		}
+		return t.Accent(label)
+	case sshmanager.StatusCanceled:
+		return t.Warn("• canceled")
+	default:
+		return t.Warn(label)
+	}
+}
+
+func logDuration(entry sshmanager.AccessLog) string {
+	if entry.DurationMS == nil {
+		return "-"
+	}
+	return (time.Duration(*entry.DurationMS) * time.Millisecond).Round(time.Millisecond).String()
+}
+
+func formatLogTime(started time.Time) string {
+	local := started.Local()
+	now := time.Now()
+	if local.Year() == now.Year() && local.YearDay() == now.YearDay() {
+		return "Today " + local.Format("15:04")
+	}
+	if local.Year() == now.AddDate(0, 0, -1).Year() && local.YearDay() == now.AddDate(0, 0, -1).YearDay() {
+		return "Yesterday " + local.Format("15:04")
+	}
+	return local.Format("2006-01-02 15:04")
 }
 
 func SSHFailure(err error, t Theme) string {
@@ -117,18 +178,18 @@ func KeyList(keys []sshmanager.Key, query, filter, notice string, cursor int, t 
 		return body.String()
 	}
 	for i, key := range keys {
-		source := "standard"
+		source := "external"
 		if key.Managed {
 			source = "managed"
 		}
-		description := strings.TrimPrefix(key.Type, "ssh-") + " · " + source + " · " + key.Fingerprint
+		description := source + " · " + strings.TrimPrefix(key.Type, "ssh-") + " · " + key.Fingerprint
 		body.WriteString(t.Choice(key.Name, description, i == cursor))
 	}
 	return strings.TrimSuffix(body.String(), "\n")
 }
 
 func KeyDetail(key sshmanager.Key, notice string, t Theme) string {
-	source := "Standard ~/.ssh key"
+	source := "External ~/.ssh key"
 	if key.Managed {
 		source = "AIAI managed key"
 	}
@@ -136,14 +197,17 @@ func KeyDetail(key sshmanager.Key, notice string, t Theme) string {
 	if notice != "" {
 		body += t.Good(notice) + "\n\n"
 	}
-	body += "Type: " + key.Type + "\n" +
-		"Fingerprint: " + key.Fingerprint + "\n" +
-		"Private key: " + key.PrivatePath + "\n" +
-		"Public key: " + key.PublicPath + "\n"
+	valueWidth := max(1, t.Width()-15)
+	body += t.Section("Identity") + "\n" +
+		"  Type         " + t.Truncate(key.Type, valueWidth) + "\n" +
+		"  Fingerprint  " + t.Truncate(key.Fingerprint, valueWidth) + "\n\n" +
+		t.Section("Files") + "\n" +
+		"  Private      " + t.Truncate(key.PrivatePath, valueWidth) + "\n" +
+		"  Public       " + t.Truncate(key.PublicPath, valueWidth) + "\n"
 	if key.Comment != "" {
-		body += "Comment: " + key.Comment + "\n"
+		body += "  Comment      " + t.Truncate(key.Comment, valueWidth) + "\n"
 	}
-	body += "\n" + t.Accent("c") + "  Copy public key\n"
+	body += "\n" + t.Section("Actions") + "\n" + t.Accent("c") + "  Copy public key\n"
 	if key.Managed {
 		body += t.Accent("d") + "  Delete managed key\n"
 	}

@@ -9,8 +9,7 @@ import (
 func DeviceLogin(device auth.DeviceAuthorization, t Theme) string {
 	body := t.Heading("Sign in with GitHub", "Complete authorization in your browser.") +
 		"Open: " + device.VerificationURI + "\n\n" +
-		t.Title(device.UserCode) + "\n\n" +
-		t.Muted("Waiting for authorization…")
+		t.Title(device.UserCode)
 	if device.BrowserOpenWarning != "" {
 		body += "\n\n" + t.Warn(device.BrowserOpenWarning)
 	}

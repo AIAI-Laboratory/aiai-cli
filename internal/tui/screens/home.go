@@ -21,27 +21,55 @@ type Theme interface {
 	Keys(hint string) string
 	Choice(label, description string, selected bool) string
 	Step(current int) string
+	Section(title string) string
+	Truncate(text string, width int) string
 }
 
 type Command struct {
 	Name        string
 	Description string
+	Category    string
 }
 
 var HomeItems = []Command{
-	{"/init", "Initialize a Python project"},
-	{"/servers", "Browse local SSH server profiles"},
-	{"/ssh", "Connect to a configured SSH server"},
-	{"/logs", "View SSH access history"},
-	{"/keys", "Find managed and standard SSH keys"},
-	{"/keygen", "Generate a managed key: /keygen <name>"},
-	{"/login", "Sign in with GitHub"},
-	{"/whoami", "Show the signed-in account"},
-	{"/logout", "Remove the current session"},
-	{"/update", "Check for updates and upgrade AIAI"},
-	{"/help", "Explore keyboard shortcuts"},
-	{"/about", "About AIAI CLI"},
-	{"/quit", "Return to your terminal"},
+	{"/init", "Initialize a Python project", "Project"},
+	{"/servers", "Browse local SSH server profiles", "SSH"},
+	{"/ssh", "Connect to a configured SSH server", "SSH"},
+	{"/logs", "View SSH access history", "SSH"},
+	{"/keys", "Find managed and standard SSH keys", "SSH"},
+	{"/keygen", "Generate a managed key: /keygen <name>", "SSH"},
+	{"/login", "Sign in with GitHub", "Account"},
+	{"/whoami", "Show the signed-in account", "Account"},
+	{"/logout", "Remove the current session", "Account"},
+	{"/update", "Check for updates and upgrade AIAI", "AIAI"},
+	{"/zen", "A little peace inside your terminal", "AIAI"},
+	{"/monitor", "Live CPU, memory, disks, network, and processes", "AIAI"},
+	{"/about", "About AIAI CLI", "AIAI"},
+	{"/help", "Explore keyboard shortcuts", ""},
+	{"/quit", "Return to your terminal", ""},
+}
+
+func Categories() []string {
+	var categories []string
+	for _, item := range HomeItems {
+		if item.Category == "" {
+			continue
+		}
+		if len(categories) == 0 || categories[len(categories)-1] != item.Category {
+			categories = append(categories, item.Category)
+		}
+	}
+	return categories
+}
+
+func RootCommands() []int {
+	var commands []int
+	for index, item := range HomeItems {
+		if item.Category == "" {
+			commands = append(commands, index)
+		}
+	}
+	return commands
 }
 
 func MatchingCommands(query string) []int {
@@ -64,12 +92,46 @@ func MatchingCommands(query string) []int {
 	return matches
 }
 
-func Home(cursor int, query string, t Theme) string {
-	var s strings.Builder
+func VisibleCommands(query, category string) []int {
 	matches := MatchingCommands(query)
+	if strings.TrimSpace(query) != "" || category == "" {
+		return matches
+	}
+	visible := matches[:0]
+	for _, index := range matches {
+		if HomeItems[index].Category == category {
+			visible = append(visible, index)
+		}
+	}
+	return visible
+}
+
+func Home(cursor int, query, category string, t Theme) string {
+	var s strings.Builder
+	if strings.TrimSpace(query) == "" && category == "" {
+		descriptions := map[string]string{
+			"Project": "Create a project",
+			"SSH":     "Servers, keys, and access logs",
+			"Account": "Authentication and profile",
+			"AIAI":    "Zen, monitor, and updates",
+		}
+		categories := Categories()
+		for row, name := range categories {
+			s.WriteString(t.Choice(name, descriptions[name], row == cursor))
+		}
+		for row, index := range RootCommands() {
+			item := HomeItems[index]
+			s.WriteString(t.Choice(item.Name, item.Description, len(categories)+row == cursor))
+		}
+		return strings.TrimSuffix(s.String(), "\n")
+	}
+	matches := VisibleCommands(query, category)
 	if len(matches) == 0 {
 		return t.Heading("No matching commands", "Nothing matches "+strconv.Quote(strings.TrimSpace(query))+".") +
 			"Try a shorter command name, or press " + t.Accent("Esc") + " to clear the filter."
+	}
+	if category != "" && strings.TrimSpace(query) == "" {
+		s.WriteString(t.Muted("Esc returns to workspace") + "\n\n")
 	}
 	for row, index := range matches {
 		item := HomeItems[index]
@@ -79,14 +141,19 @@ func Home(cursor int, query string, t Theme) string {
 }
 
 func Help(t Theme) string {
-	return t.Heading("Keyboard shortcuts", "A few keys are all you need.") +
-		"↑/↓ or j/k  Navigate menus and scroll previews\n" +
-		"Enter       Select or continue\n" +
-		"Tab         Complete a command / next form field\n" +
-		"Shift+Tab   Previous form field\n" +
-		"Space       Toggle a form option\n" +
-		"Esc         Clear command filter / go back\n" +
-		"Ctrl+C      Cancel safely\n" +
-		"?           Toggle help\n\n" +
-		t.Muted("Type / on the home screen to filter commands. Use /help while the command field is active.\nIn text fields and filters, shortcuts are entered as text.")
+	return t.Heading("Help & shortcuts", "Keyboard-first, predictable everywhere.") +
+		t.Section("Navigate") + "\n" +
+		"  ↑/↓  j/k      Move selection\n" +
+		"  Enter         Open or confirm\n" +
+		"  Esc           Back or dismiss\n\n" +
+		t.Section("Find") + "\n" +
+		"  /             Search the current list\n" +
+		"  Tab           Complete a command\n\n" +
+		t.Section("Forms") + "\n" +
+		"  Tab / Shift+Tab  Next / previous field\n" +
+		"  Space            Toggle option\n\n" +
+		t.Section("Global") + "\n" +
+		"  ?             Toggle this help\n" +
+		"  Ctrl+C        Cancel safely\n\n" +
+		t.Muted("Printable shortcuts are entered as text while an input is focused.")
 }

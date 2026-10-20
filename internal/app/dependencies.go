@@ -5,11 +5,13 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/command"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
 func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, injectedGitHubClientID string) (command.Dependencies, error) {
@@ -37,6 +39,10 @@ func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, 
 		return command.Dependencies{}, err
 	}
 	sshService := sshmanager.NewService(sshRepository, sshmanager.OpenSSHRunner{})
+	zenRepository, err := zen.NewJSONRepository("")
+	if err != nil {
+		return command.Dependencies{}, err
+	}
 	return command.Dependencies{
 		Planner:  project.Initializer{Engine: scaffold.Engine{Registry: r}},
 		Executor: scaffold.FileExecutor{},
@@ -44,6 +50,8 @@ func dependencies(in io.Reader, out, errOut io.Writer, version, injectedAPIURL, 
 		Auth:     authService,
 		Updater:  updaterService,
 		SSH:      sshService,
+		Zen:      zenRepository,
+		Monitor:  &monitor.NativeCollector{},
 		In:       in,
 		Out:      out,
 		Err:      errOut,

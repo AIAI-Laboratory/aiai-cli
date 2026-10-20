@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
@@ -20,6 +22,7 @@ import (
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
 type Dependencies struct {
@@ -33,6 +36,8 @@ type Dependencies struct {
 	Auth     auth.Authenticator
 	Updater  updater.Service
 	SSH      sshmanager.Manager
+	Zen      zen.Repository
+	Monitor  monitor.Collector
 	// Interactive can be injected by tests; production uses actual descriptors.
 	Interactive func() bool
 }
@@ -49,6 +54,8 @@ type state struct {
 	auth    *output.Auth
 	update  *output.Update
 	ssh     *output.SSH
+	zen     *output.Zen
+	system  *monitor.Snapshot
 }
 
 func Run(ctx context.Context, args []string, deps Dependencies) int {
@@ -60,7 +67,7 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 	err := root.ExecuteContext(ctx)
 	code := ExitCode(err)
 	if s.json {
-		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, SSH: s.ssh}
+		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, SSH: s.ssh, Zen: s.zen, System: s.system}
 		if err != nil {
 			e.Status = "error"
 			e.Error = &output.Error{Code: code, Message: err.Error()}
@@ -94,6 +101,8 @@ func ExitCode(err error) int {
 	case errors.Is(err, auth.ErrIO):
 		return 4
 	case errors.Is(err, sshmanager.ErrStorage), errors.Is(err, sshmanager.ErrSSHMissing):
+		return 4
+	case errors.Is(err, zen.ErrStorage):
 		return 4
 	default:
 		return 2
@@ -137,7 +146,7 @@ func (s *state) root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&s.json, "json", false, "Emit one JSON envelope (schema version 1)")
 	root.PersistentFlags().BoolVar(&s.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&s.verbose, "verbose", false, "Write diagnostic logs to stderr")
-	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.serverCommand(), s.sshCommand(), s.logCommand(), s.keyCommand())
+	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.serverCommand(), s.sshCommand(), s.logCommand(), s.keyCommand(), s.zenCommand(), s.monitorCommand(), s.systemCommand())
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		s.status = "help"
@@ -174,6 +183,12 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 	}
 	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
 	result, plan, action, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
+	for err == nil && action.Monitor {
+		if err = s.runMonitor(ctx, time.Second); err != nil {
+			return err
+		}
+		result, plan, action, err = tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
+	}
 	s.plan, s.result = plan, result
 	if err == nil && action.SSHAlias != "" {
 		return s.deps.SSH.Connect(ctx, action.SSHAlias, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
@@ -186,6 +201,9 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		fmt.Fprintln(s.human(), "\nSSH key generated:")
 		printKey(s.human(), key)
 		return nil
+	}
+	if err == nil && action.Zen {
+		return s.runZen(ctx, 0, zen.Config{})
 	}
 	if result != nil && err == nil && !s.json {
 		fmt.Fprint(s.human(), output.ResultText(*result))
