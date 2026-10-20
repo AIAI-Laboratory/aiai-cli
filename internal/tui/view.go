@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -173,7 +174,83 @@ func (m Model) chrome() (string, string) {
 
 func (m Model) header() string {
 	t := m.theme()
+	if m.screen == home && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" {
+		return m.welcomeHeader()
+	}
 	return t.Title("AIAI CLI") + "\n" + t.Rule()
+}
+
+func (m Model) welcomeHeader() string {
+	t := m.theme()
+	version := strings.TrimPrefix(m.opts.Version, "v")
+	title := t.Title("AIAI CLI")
+	if version != "" {
+		title += "  " + t.Muted(version)
+	}
+
+	path, err := os.UserHomeDir()
+	if err != nil || path == "" {
+		path, _ = os.Getwd()
+	}
+	status := t.Good("●") + " " + t.Muted("Offline templates")
+	if m.authUser != nil && m.authUser.Login != "" {
+		status += t.Muted(" · Signed in as @" + m.authUser.Login)
+	}
+
+	if t.Width() < 60 {
+		return truncate(t.Accent("◆")+" "+title, t.Width()) + "\n" +
+			truncate(t.Muted("Your next project starts here."), t.Width()) + "\n" +
+			truncate(t.Muted(path), t.Width()) + "\n" +
+			truncate(status, t.Width()) + "\n" + t.Rule()
+	}
+
+	logo := []string{
+		"    ##     +++",
+		"   ####       +",
+		"  ##  ##    ++",
+		" ##    ##     +",
+		"##      ##   +++",
+		"##########   +  +",
+		"##      ##   +  +",
+		"##      ##   +++",
+	}
+	info := []string{
+		"",
+		title,
+		t.Muted("Your next project starts here."),
+		"",
+		t.Muted(path),
+		status,
+		"",
+		"",
+	}
+	logoWidth := 0
+	for _, pixelRow := range logo {
+		logoWidth = max(logoWidth, lipgloss.Width(renderWelcomeLogo(pixelRow, t)))
+	}
+	textWidth := max(1, t.Width()-logoWidth-3)
+	rows := make([]string, len(logo))
+	for i, pixelRow := range logo {
+		logoRow := renderWelcomeLogo(pixelRow, t)
+		padding := strings.Repeat(" ", logoWidth-lipgloss.Width(logoRow))
+		rows[i] = logoRow + padding + "   " + truncate(info[i], textWidth)
+	}
+	return strings.Join(rows, "\n") + "\n" + t.Rule()
+}
+
+func renderWelcomeLogo(row string, t Theme) string {
+	var rendered strings.Builder
+	for _, pixel := range row {
+		switch pixel {
+		case '#':
+			rendered.WriteString(t.Title("█"))
+		case '+':
+			rendered.WriteString(t.Accent("█"))
+		default:
+			rendered.WriteRune(pixel)
+		}
+	}
+	return rendered.String()
 }
 
 func (m Model) toolbar() string {

@@ -406,6 +406,30 @@ func TestViewsFitTerminal(t *testing.T) {
 	}
 }
 
+func TestWelcomeHeaderRestoresBrandAndSessionContext(t *testing.T) {
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{new(int)}, nil, nil, nil, Options{Version: "v0.4.1", NoColor: true})
+	defer m.cancel()
+	user := auth.User{Login: "octocat"}
+	m.authUser = &user
+
+	header := m.header()
+	if !strings.Contains(header, "AIAI CLI  0.4.1") || !strings.Contains(header, "Your next project starts here.") {
+		t.Fatalf("welcome header is missing the product title or tagline: %q", header)
+	}
+	if !strings.Contains(header, "Offline templates") || !strings.Contains(header, "Signed in as @octocat") {
+		t.Fatalf("welcome header is missing template or account status: %q", header)
+	}
+	if !strings.Contains(header, "█") {
+		t.Fatalf("welcome header is missing the pixel logo: %q", header)
+	}
+
+	m.homeCategory = "SSH"
+	categoryHeader := m.header()
+	if strings.Contains(categoryHeader, "Your next project starts here.") || !strings.Contains(categoryHeader, "AIAI CLI") {
+		t.Fatalf("category view should use the compact header: %q", categoryHeader)
+	}
+}
+
 func TestResponsiveSSHPresentation(t *testing.T) {
 	now := time.Now()
 	server := sshmanager.Server{Alias: "production", Host: "prod.example.com", Port: 2222, Username: "deploy", IdentityFile: "/keys/deploy", Description: "Primary deployment host", UpdatedAt: now}
