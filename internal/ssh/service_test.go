@@ -58,11 +58,13 @@ func TestServerCRUDAndPersistence(t *testing.T) {
 	if created.Alias != "production" || created.Port != 22 {
 		t.Fatalf("unexpected server: %+v", created)
 	}
-	if info, statErr := os.Stat(path); statErr != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("storage mode = %v, %v", info, statErr)
-	}
-	if info, statErr := os.Stat(filepath.Dir(path)); statErr != nil || info.Mode().Perm() != 0o700 {
-		t.Fatalf("storage directory mode = %v, %v", info, statErr)
+	if runtime.GOOS != "windows" {
+		if info, statErr := os.Stat(path); statErr != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("storage mode = %v, %v", info, statErr)
+		}
+		if info, statErr := os.Stat(filepath.Dir(path)); statErr != nil || info.Mode().Perm() != 0o700 {
+			t.Fatalf("storage directory mode = %v, %v", info, statErr)
+		}
 	}
 	if _, err := service.Add(context.Background(), AddRequest{Alias: "production", Host: "example.com", Username: "deploy"}); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("duplicate error = %v", err)

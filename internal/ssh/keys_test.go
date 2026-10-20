@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -53,11 +54,13 @@ func TestGenerateStoreAndFindKeys(t *testing.T) {
 	if !containsArgs(tool.args, "-N", "") {
 		t.Fatalf("ssh-keygen args do not contain explicit empty passphrase: %#v", tool.args)
 	}
-	if info, statErr := os.Stat(key.PrivatePath); statErr != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("private key mode = %v, %v", info, statErr)
-	}
-	if info, statErr := os.Stat(key.PublicPath); statErr != nil || info.Mode().Perm() != 0o644 {
-		t.Fatalf("public key mode = %v, %v", info, statErr)
+	if runtime.GOOS != "windows" {
+		if info, statErr := os.Stat(key.PrivatePath); statErr != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("private key mode = %v, %v", info, statErr)
+		}
+		if info, statErr := os.Stat(key.PublicPath); statErr != nil || info.Mode().Perm() != 0o644 {
+			t.Fatalf("public key mode = %v, %v", info, statErr)
+		}
 	}
 	keys, err := service.FindKeys(context.Background(), "work laptop")
 	if err != nil || len(keys) != 1 || keys[0].PrivatePath != key.PrivatePath {
