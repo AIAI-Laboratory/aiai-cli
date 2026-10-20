@@ -25,7 +25,7 @@ The script automatically detects your OS and architecture (macOS/Linux on ARM64/
 
 ### Build from source (developers)
 
-Go 1.27+ is required to build from source:
+Go 1.27.2+ is required to build from source:
 
 ```bash
 go build -trimpath -o bin/aiai ./cmd/aiai
@@ -34,13 +34,14 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 
 The home screen provides a searchable command menu including **/init**, **/servers**,
 **/ssh**, **/logs**, **/keys**, **/keygen**, **/login**, **/whoami**, **/logout**, **/help**, **/about**,
-and **/quit**. Type `/` to filter
-commands, Tab to complete, and Enter to select. Esc clears the filter, then exits.
+and **/quit**. Type to filter commands, Tab to complete, and Enter to select.
+Esc clears the filter, then exits.
 Arrows navigate the menu; `j/k` also work when the command field is empty.
 
 The wizard selects a template, collects project fields, previews file operations,
 and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
-select, Esc to return, and Ctrl+C to cancel. `?` opens help. The layout adapts to
+select, Esc to return, and Ctrl+C to cancel. Use `/help` while typing a command;
+`?` opens contextual help elsewhere. The layout adapts to
 smaller terminals and keeps the focused field visible. The AIAI mark is rendered
 with terminal block characters; vector and raster versions live in
 [assets/aiai-logo.svg](assets/aiai-logo.svg) and [assets/aiai-logo.png](assets/aiai-logo.png).
@@ -112,6 +113,9 @@ and `/keygen <name>` to generate a managed key. Before starting OpenSSH or
 input/output.
 In `/keys`, select a key and press `c` to copy its public key. Managed keys can
 be deleted with `d` after confirmation; standard `~/.ssh` keys are read-only.
+On the server and key lists, press `/` to focus the filter. Esc clears the
+filter, then returns to the previous screen on a subsequent press. Enter keeps
+the filter and returns to list navigation.
 
 `aiai` and `aiai init` open the TUI only with a terminal. Non-interactive generation
 requires `--yes`; `--dry-run` never writes and does not require confirmation.

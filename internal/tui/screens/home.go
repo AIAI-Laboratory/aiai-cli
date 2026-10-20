@@ -1,6 +1,9 @@
 package screens
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Theme interface defines the styling contract required by screens without
 // coupling back to internal/tui, preventing circular import dependencies.
@@ -65,7 +68,8 @@ func Home(cursor int, query string, t Theme) string {
 	var s strings.Builder
 	matches := MatchingCommands(query)
 	if len(matches) == 0 {
-		return t.Muted("No matching commands. Clear the filter with Esc.")
+		return t.Heading("No matching commands", "Nothing matches "+strconv.Quote(strings.TrimSpace(query))+".") +
+			"Try a shorter command name, or press " + t.Accent("Esc") + " to clear the filter."
 	}
 	for row, index := range matches {
 		item := HomeItems[index]
@@ -84,5 +88,5 @@ func Help(t Theme) string {
 		"Esc         Clear command filter / go back\n" +
 		"Ctrl+C      Cancel safely\n" +
 		"?           Toggle help\n\n" +
-		t.Muted("Type / on the home screen to filter commands.\nIn text fields and command filters, j/k are entered as text.")
+		t.Muted("Type / on the home screen to filter commands. Use /help while the command field is active.\nIn text fields and filters, shortcuts are entered as text.")
 }

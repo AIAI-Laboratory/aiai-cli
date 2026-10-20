@@ -155,6 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.servers, m.serverConnect, m.cursor = msg.servers, msg.connect, 0
+		m.clearSearch()
 		m.screen = serverList
 		m.viewport.GotoTop()
 	case logsLoadedMsg:
@@ -176,6 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.keys, m.keyQuery, m.cursor = msg.keys, msg.query, 0
+		m.clearSearch()
 		m.screen = keyList
 		m.viewport.GotoTop()
 	case keyCopiedMsg:
@@ -198,7 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		if m.cursor >= len(m.keys) && m.cursor > 0 {
+		if m.cursor >= len(m.visibleKeys()) && m.cursor > 0 {
 			m.cursor--
 		}
 		m.keyNotice = "Deleted managed key: " + msg.name
@@ -216,6 +218,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.screen == form && m.focus < len(m.inputs) {
 		var cmd tea.Cmd
 		m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
+		return m, cmd
+	}
+	if (m.screen == serverList || m.screen == keyList) && m.searching {
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		m.cursor = 0
 		return m, cmd
 	}
 	if m.screen == home {
