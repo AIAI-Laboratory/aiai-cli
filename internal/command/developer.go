@@ -66,7 +66,7 @@ func parseDate(value string, end bool) (time.Time, error) {
 
 func (s *state) gitCommand() *cobra.Command {
 	path := "."
-	cmd := &cobra.Command{Use: "git", Short: "Read-only local Git workspace", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "git", Short: "Local Git workspace with quick actions", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if s.json || !s.interactive() {
 			return s.gitRead(cmd.Context(), "status", path, "", false, gitlocal.Filter{})
 		}

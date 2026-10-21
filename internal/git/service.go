@@ -73,8 +73,8 @@ type Activity struct {
 	Truncated bool           `json:"truncated"`
 }
 
-// Service invokes only explicit read operations. Repository hooks, external
-// diff/textconv and optional index writes are disabled, never trust checks.
+// Service invokes explicit local Git operations without a shell. Read queries
+// disable hooks and optional index writes; mutations retain repository hooks.
 type (
 	Service      struct{ Executable string }
 	cappedBuffer struct {
@@ -91,15 +91,27 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 }
 
 func (s *Service) run(ctx context.Context, path string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	return s.execute(ctx, path, false, args...)
+}
+
+func (s *Service) execute(ctx context.Context, path string, mutation bool, args ...string) ([]byte, error) {
+	timeout := 12 * time.Second
+	if mutation {
+		timeout = 2 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	exe := s.Executable
 	if exe == "" {
 		exe = "git"
 	}
-	base := []string{"--no-pager", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=", "-c", "color.ui=false"}
+	base := []string{"--no-pager", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "color.ui=false"}
+	if !mutation {
+		base = append(base, "-c", "core.hooksPath=")
+	}
 	cmd := exec.CommandContext(ctx, exe, append(base, args...)...)
 	cmd.Dir = path
+	cmd.WaitDelay = 2 * time.Second
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
 		if key == "GIT_DIR" || key == "GIT_WORK_TREE" || key == "GIT_INDEX_FILE" || key == "GIT_COMMON_DIR" || key == "GIT_CONFIG_COUNT" || strings.HasPrefix(key, "GIT_CONFIG_KEY_") || strings.HasPrefix(key, "GIT_CONFIG_VALUE_") {
@@ -108,6 +120,9 @@ func (s *Service) run(ctx context.Context, path string, args ...string) ([]byte,
 		cmd.Env = append(cmd.Env, item)
 	}
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	if mutation {
+		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=1", "GIT_EDITOR=:", "GIT_SEQUENCE_EDITOR=:")
+	}
 	out, stderr := &cappedBuffer{Limit: 4 << 20}, &cappedBuffer{Limit: 16 << 10}
 	cmd.Stdout = out
 	cmd.Stderr = stderr
@@ -119,6 +134,9 @@ func (s *Service) run(ctx context.Context, path string, args ...string) ([]byte,
 		// not arbitrary Git diagnostics; safe.directory remains enforced by Git.
 		if _, ok := err.(*exec.Error); ok {
 			return nil, fmt.Errorf("git executable unavailable: install Git and put it in PATH")
+		}
+		if mutation {
+			return nil, fmt.Errorf("git %s failed: %s (%v)", args[0], mutationHint(args[0], stderr.String()), err)
 		}
 		return nil, fmt.Errorf("git %s failed: repository unavailable, untrusted, or query exceeded limits (%v)", args[0], err)
 	}

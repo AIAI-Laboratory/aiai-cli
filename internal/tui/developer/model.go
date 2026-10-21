@@ -66,7 +66,11 @@ type Model struct {
 	activity                                          *gitlocal.Activity
 	diff                                              string
 	timeline                                          *workspace.Timeline
-	search                                            textinput.Model
+	search, gitInput                                  textinput.Model
+	dialog                                            gitDialog
+	gitBusy                                           bool
+	writeID                                           int
+	notice                                            string
 	searching, loading, staged, preview, help, detail bool
 	backPath                                          string
 	err                                               error
@@ -89,7 +93,13 @@ func NewModel(ctx context.Context, opts Options) Model {
 	if opts.NoColor {
 		input.SetStyles(textinput.Styles{})
 	}
-	return Model{ctx: ctx, opts: opts, width: opts.Width, height: opts.Height, search: input, token: 1, loading: true}
+	gitInput := textinput.New()
+	gitInput.CharLimit = 500
+	gitInput.SetWidth(max(1, min(120, opts.Width-4)-2))
+	if opts.NoColor {
+		gitInput.SetStyles(textinput.Styles{})
+	}
+	return Model{ctx: ctx, opts: opts, width: opts.Width, height: opts.Height, search: input, gitInput: gitInput, token: 1, loading: true}
 }
 
 func Run(ctx context.Context, in io.Reader, out io.Writer, opts Options) (Action, error) {
@@ -221,6 +231,9 @@ func (m Model) visible() []int {
 	result := []int{}
 	q := strings.ToLower(m.search.Value())
 	if m.opts.Mode == "git" {
+		if m.opts.Page == 3 {
+			return m.branchIndices()
+		}
 		for i, row := range m.rows {
 			if q == "" || strings.Contains(strings.ToLower(row), q) {
 				result = append(result, i)
@@ -268,6 +281,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.search.SetWidth(max(1, m.width-8))
+		m.gitInput.SetWidth(max(1, min(120, m.width-4)-2))
+	case gitWriteDone:
+		if msg.id != m.writeID || !m.gitBusy {
+			return m, nil
+		}
+		m.gitBusy = false
+		if msg.err != nil {
+			if m.dialog.kind != "" {
+				m.dialog.err = msg.err.Error()
+			} else {
+				m.notice = msg.err.Error()
+			}
+		} else {
+			m = m.closeGitDialog()
+			m.notice = msg.notice
+		}
+		return m.refresh()
 	case loaded:
 		if msg.token != m.token {
 			return m, nil
@@ -307,6 +337,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := msg.String()
 		if key == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.gitBusy {
+			return m, nil
+		}
+		if m.dialog.kind != "" {
+			return m.updateGitDialog(msg)
 		}
 		if m.searching {
 			switch key {
@@ -368,11 +404,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 		if key == "r" {
+			m.notice = ""
 			if m.detail {
 				m.detail = false
 				m.timeline = nil
 			}
 			return m.refresh()
+		}
+		if next, cmd, handled := m.gitShortcut(key); handled {
+			return next, cmd
 		}
 		if m.opts.Mode == "git" && (key == "left" || key == "right" || key == "h" || key == "l") {
 			delta := 1
@@ -410,7 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				delta *= max(1, step)
 			}
-			if m.detail || m.preview || m.opts.Mode == "git" && m.opts.Page != 1 {
+			if m.detail || m.preview || m.opts.Mode == "git" && m.opts.Page != 1 && m.opts.Page != 3 {
 				m.offset = max(0, m.offset+delta)
 			} else {
 				m.cursor = max(0, min(max(0, len(m.visible())-1), m.cursor+delta))
@@ -458,6 +498,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	if m.dialog.kind != "" && !m.gitBusy {
+		return m.updateGitDialog(msg)
+	}
 	return m, nil
 }
 
@@ -480,6 +523,9 @@ func (m Model) bodyHeight() int {
 		header++
 	}
 	if m.searching || m.search.Value() != "" {
+		header++
+	}
+	if m.notice != "" {
 		header++
 	}
 	return max(1, m.height-header-6)
@@ -506,6 +552,9 @@ func (m Model) View() tea.View {
 	if m.searching || m.search.Value() != "" {
 		header += "\n" + m.search.View()
 	}
+	if m.notice != "" {
+		header += "\n" + ansi.Truncate(oneLine(m.notice), width, "…")
+	}
 	height := m.bodyHeight()
 	footer := "↑↓ select · enter timeline · g git · z focus · ? help · q back"
 	if width < 80 {
@@ -513,8 +562,13 @@ func (m Model) View() tea.View {
 	}
 	body := ""
 	switch {
+	case m.gitBusy:
+		body = "Running Git operation…"
+		footer = "ctrl+c cancel"
+	case m.dialog.kind != "":
+		body, footer = m.gitDialogView(width)
 	case m.help:
-		body = "Read-only local developer workspace\n\n↑/↓ or j/k navigate · Esc/q back\n/ search (shortcuts disabled while typing)\nGit: ←/→ pages · Tab files/preview · s staged\nPreview: ↑/↓ scroll · long lines truncated\nWorkspace: Enter timeline · g Git · z focus\nr refresh · Ctrl+C cancel\n\nNo fetch, checkout, staging or deletion.\nCommit counts never imply hours or authorship."
+		body = "Local developer workspace\n\nGit: a actions · c commit · b branches\nChanges: Space stage/unstage · A stage all\nU unstage all · s staged diff · Tab preview\nBranches: ↑↓ select · Enter switch · n new\n←/→ pages · / search · r refresh\nWorkspace: Enter timeline · g Git · z focus\nEsc/q back · Ctrl+C cancel"
 	case m.loading:
 		body = "Loading local data…"
 		footer = "q back · ctrl+c cancel"
@@ -523,19 +577,20 @@ func (m Model) View() tea.View {
 		footer = "r retry · q back"
 	default:
 		if m.opts.Mode == "git" {
-			footer = "←→ pages · ↑↓ scroll · / search · ? help · q back"
+			footer = "a actions · c commit · b branches · ←→ pages · ? help · q back"
 			switch m.opts.Page {
 			case 0:
 				body = m.statusView(width, height)
 			case 1:
-				footer = "↑/↓ files · tab preview · s staged · / search · q back"
+				footer = "space stage/unstage · c commit · a actions · tab diff · s staged · q back"
 				if m.preview {
-					footer = "↑/↓ scroll diff · tab files · s staged · / search · q back"
+					footer = "↑↓ diff · tab files · c commit · a actions · s staged · q back"
 				}
 				body = m.diffView(width, height)
 			case 2:
 				body = m.historyView(width, height)
 			case 3:
+				footer = "↑↓ select · enter switch · n new branch · a actions · q back"
 				body = m.branchesView(width, height)
 			case 4:
 				body = m.worktreesView(width, height)
@@ -545,12 +600,24 @@ func (m Model) View() tea.View {
 				body = m.scrollRows(m.rows, width, height)
 			}
 			if width < 80 {
-				footer = "←→ pages · ↑↓ scroll · ? · q back"
+				footer = "a actions · ←→ pages · / search · q back"
 				if m.opts.Page == 1 {
-					footer = "↑↓ files · tab diff · s staged · q back"
+					footer = "space stage · c commit · a actions · q back"
 					if m.preview {
-						footer = "↑↓ diff · tab files · s staged · q back"
+						footer = "tab files · s staged · a actions · q back"
 					}
+				}
+				if m.opts.Page == 3 {
+					footer = "enter switch · n new · a actions · q back"
+				}
+			}
+			if width < 60 {
+				footer = "a actions · ←→ pages · q back"
+				if m.opts.Page == 1 {
+					footer = "space stage · a actions · q back"
+				}
+				if m.opts.Page == 3 {
+					footer = "enter switch · a actions · q back"
 				}
 			}
 		} else if m.detail {

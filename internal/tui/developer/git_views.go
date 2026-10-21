@@ -114,7 +114,7 @@ func (m Model) diffView(width, height int) string {
 	if m.staged {
 		scope = "Staged"
 	}
-	files := []string{m.paneTitle(fmt.Sprintf("FILES  %d / %d", cursor+1, len(indices)), !m.preview), m.muted("  " + scope), m.muted(strings.Repeat("─", leftWidth))}
+	files := []string{m.paneTitle(fmt.Sprintf("FILES  %d / %d", cursor+1, len(indices)), !m.preview), m.muted(fmt.Sprintf("  %s · %d staged", scope, m.status.Staged)), m.muted(strings.Repeat("─", leftWidth))}
 	start := max(0, cursor-capacity+1)
 	for visible := start; visible < min(len(indices), start+capacity); visible++ {
 		index := indices[visible]
@@ -123,7 +123,17 @@ func (m Model) diffView(width, height int) string {
 		}
 		change := m.status.Changes[index]
 		label := changeLabel(change)
-		name := pathTail(change.Path, max(1, leftWidth-12))
+		name := pathTail(change.Path, max(1, leftWidth-16))
+		checkbox := "[ ] "
+		if change.Index != "" && change.Index != "." && change.Index != "?" {
+			checkbox = "[x] "
+			if change.Worktree != "" && change.Worktree != "." {
+				checkbox = "[-] "
+			}
+		}
+		if change.Conflict {
+			checkbox = "[!] "
+		}
 		marker := "  "
 		if visible == cursor {
 			marker = m.accent("> ")
@@ -138,7 +148,7 @@ func (m Model) diffView(width, height int) string {
 		if label == "New" || label == "Added" {
 			status = m.tone(column(label, 9), style.Good)
 		}
-		files = append(files, marker+status+" "+name)
+		files = append(files, marker+m.muted(checkbox)+status+" "+name)
 	}
 	diff := m.diff
 	if diff == "" {

@@ -96,18 +96,40 @@ func (m Model) statusView(width, height int) string {
 	return m.pageRows(rows, width, height)
 }
 
+func (m Model) branchIndices() []int {
+	indices := []int{}
+	for index, branch := range m.branches {
+		if m.matches(branch.Name + " " + branch.Upstream + " " + branch.Head + " " + branch.Tracking) {
+			indices = append(indices, index)
+		}
+	}
+	return indices
+}
+
 func (m Model) branchesView(width, height int) string {
 	if len(m.branches) == 0 {
 		return m.muted("No local branches yet.")
 	}
+	indices := m.branchIndices()
+	if len(indices) == 0 {
+		return m.muted("No branches match this search.")
+	}
 	rows := []string{m.title("Local branches"), ""}
-	for _, b := range m.branches {
-		if !m.matches(b.Name + " " + b.Upstream + " " + b.Head) {
+	capacity := max(1, (height-2)/3)
+	cursor := min(m.cursor, len(indices)-1)
+	start := max(0, cursor-capacity+1)
+	for visible := start; visible < min(len(indices), start+capacity); visible++ {
+		index := indices[visible]
+		if index >= len(m.branches) {
 			continue
 		}
+		b := m.branches[index]
 		prefix := "  "
 		name := oneLine(b.Name)
 		if b.Current {
+			name += " *"
+		}
+		if visible == cursor {
 			prefix = "> "
 			name = m.accent(name)
 		}
@@ -121,10 +143,7 @@ func (m Model) branchesView(width, height int) string {
 		}
 		rows = append(rows, m.muted("  "+tracking), "")
 	}
-	if len(rows) == 2 {
-		return m.muted("No branches match this search.")
-	}
-	return m.viewPage(rows, width, height)
+	return strings.Join(rows, "\n")
 }
 
 func (m Model) worktreesView(width, height int) string {

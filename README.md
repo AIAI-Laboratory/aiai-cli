@@ -93,7 +93,7 @@ Git and Workspace load asynchronously; no filesystem or Git queries run in
 their render functions. Boards run at most four project queries concurrently,
 with a four-second budget per project. Errors on one project do not hide others.
 
-### AIAI Git — read-only and offline
+### AIAI Git — local workspace and quick actions
 
 Git must be installed and available in `PATH`. No GitHub sign-in is required.
 
@@ -119,14 +119,33 @@ Use ←/→ to change pages. Changes shows files beside a colored diff on wide
 terminals; Tab switches to the preview on narrow terminals and moves keyboard
 focus between files/preview. ↑/↓ scrolls the focused area; `s` toggles index versus
 working-tree diffs. Long lines are truncated, binary changes are indicated, and
-untracked contents are not opened. Git never stages, edits or discards files.
+untracked contents are not opened.
+
+Press `a` on any Git page to open the actions menu. Quick shortcuts:
+
+| Key | Action |
+| --- | --- |
+| Space in Changes | Stage the selected file; unstage it in staged view or when it has only staged changes |
+| `A` / `U` | Stage all / unstage all, preserving working files |
+| `c` | Enter a message and commit staged changes with Enter |
+| `b` | Open local branches; select with ↑/↓ and Enter to review a switch |
+| `n` | Enter a name to create a branch from HEAD and switch to it |
+| Esc in a form | Cancel without running the action |
+
+Commit uses the current index and honors repository hooks and signing settings.
+The message stays in the form if Git rejects the commit. Branch switches use
+Git's usual protection for local changes and branches used by another worktree.
+Operations run asynchronously, show their result, and refresh the current page.
+Printable shortcuts are disabled while typing a message, branch name or search.
+File markers show `[x]` staged, `[-]` partially staged and `[!]` conflicted.
 
 Queries use argument arrays, NUL-delimited porcelain paths, cancellation,
-12-second subprocess timeouts and bounded output (4 MiB). Pagers, hooks,
-external diff/textconv and optional index writes are disabled. Git ownership
-checks remain enabled. Diagnostics deliberately omit arbitrary Git stderr,
-which can contain credentials. No remote URLs are displayed. No fetch, push,
-pull, checkout, reset, clean or rebase is performed.
+12-second query timeouts and bounded output (4 MiB). Queries disable pagers,
+hooks, external diff/textconv and optional index writes. Explicit local writes
+have a two-minute timeout; editors and terminal prompts are disabled. Git
+ownership checks remain enabled. Diagnostics omit arbitrary Git/hook stderr,
+which can contain credentials, and provide operation-specific guidance.
+Remote operations and destructive working-tree actions are not exposed.
 
 Ahead/behind counts use **local tracking refs**, not a live remote check. History
 queries default to 100 commits and accept `--limit 1..1000`, `--since`, `--until`,
@@ -424,7 +443,7 @@ and applies files. `internal/template` reads strict manifests through a registry
 `templates/embed.go` embeds the assets including dotfiles and Python underscored
 modules. `internal/platform` owns terminal detection and filesystem containment;
 `internal/auth` owns the AIAI API session and credential persistence.
-`internal/git` owns read-only subprocess queries; `internal/workspace` combines
+`internal/git` owns local subprocess queries and explicit Git actions; `internal/workspace` combines
 explicit registrations with Git and Zen projections. `internal/localdata`
 provides versioned JSON file locking/atomic updates. `internal/tui/developer`
 presents Git and Workspace through the same services as the CLI. The command

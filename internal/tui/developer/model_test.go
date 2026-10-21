@@ -77,7 +77,7 @@ func TestLoadingErrorHelpAndStaleMessages(t *testing.T) {
 		t.Fatal("error state missing")
 	}
 	m, _ = press(m, '?')
-	if !m.help || !strings.Contains(m.View().Content, "Read-only") {
+	if !m.help || !strings.Contains(m.View().Content, "Git: a actions") {
 		t.Fatal("help missing")
 	}
 	m, _ = press(m, '?')

@@ -419,8 +419,8 @@ func TestWelcomeHeaderRestoresBrandAndSessionContext(t *testing.T) {
 	if !strings.Contains(header, "Offline templates") || !strings.Contains(header, "Signed in as @octocat") {
 		t.Fatalf("welcome header is missing template or account status: %q", header)
 	}
-	if !strings.Contains(header, "█") {
-		t.Fatalf("welcome header is missing the pixel logo: %q", header)
+	if !strings.Contains(header, "▄██▄") || !strings.Contains(header, "▐██▌▐██▌") || !strings.Contains(header, "▄▀▀▄") {
+		t.Fatalf("welcome header is missing the original ASCII logo: %q", header)
 	}
 
 	m.homeCategory = "SSH"

@@ -204,16 +204,7 @@ func (m Model) welcomeHeader() string {
 			truncate(status, t.Width()) + "\n" + t.Rule()
 	}
 
-	logo := []string{
-		"    ##     +++",
-		"   ####       +",
-		"  ##  ##    ++",
-		" ##    ##     +",
-		"##      ##   +++",
-		"##########   +  +",
-		"##      ##   +  +",
-		"##      ##   +++",
-	}
+	logo := strings.Split(m.logo(), "\n")
 	info := []string{
 		"",
 		title,
@@ -222,35 +213,37 @@ func (m Model) welcomeHeader() string {
 		t.Muted(path),
 		status,
 		"",
-		"",
 	}
 	logoWidth := 0
-	for _, pixelRow := range logo {
-		logoWidth = max(logoWidth, lipgloss.Width(renderWelcomeLogo(pixelRow, t)))
+	for _, logoRow := range logo {
+		logoWidth = max(logoWidth, lipgloss.Width(logoRow))
 	}
 	textWidth := max(1, t.Width()-logoWidth-3)
 	rows := make([]string, len(logo))
-	for i, pixelRow := range logo {
-		logoRow := renderWelcomeLogo(pixelRow, t)
+	for i, logoRow := range logo {
 		padding := strings.Repeat(" ", logoWidth-lipgloss.Width(logoRow))
 		rows[i] = logoRow + padding + "   " + truncate(info[i], textWidth)
 	}
 	return strings.Join(rows, "\n") + "\n" + t.Rule()
 }
 
-func renderWelcomeLogo(row string, t Theme) string {
-	var rendered strings.Builder
-	for _, pixel := range row {
-		switch pixel {
-		case '#':
-			rendered.WriteString(t.Title("█"))
-		case '+':
-			rendered.WriteString(t.Accent("█"))
-		default:
-			rendered.WriteRune(pixel)
-		}
+// The open A and red i² reproduce the supplied AIAI mark in terminal cells.
+// Use the terminal foreground for the A so it remains visible on dark themes.
+func (m Model) logo() string {
+	a := []string{
+		"      ▄██▄    ",
+		"     ██████   ",
+		"    ▐██▌▐██▌  ",
+		"   ▄██▀  ▀██▄ ",
+		"  ▄██▀    ▀██▄",
+		" ▐██▌      ▐██",
+		" ▀▀▀        ▀▀",
 	}
-	return rendered.String()
+	i := []string{" ▄▀▀▄ ", "  ▄▀  ", " ▀▀▀▀ ", " ████ ", " ████ ", " ████ ", " ▀▀▀▀ "}
+	for row := range a {
+		a[row] += m.theme().Brand(i[row])
+	}
+	return strings.Join(a, "\n")
 }
 
 func (m Model) toolbar() string {

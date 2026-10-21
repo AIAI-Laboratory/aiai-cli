@@ -34,7 +34,7 @@ type Command struct {
 var HomeItems = []Command{
 	{"/init", "Initialize a Python project", "Project"},
 	{"/workspace", "Your projects and development timeline", "Project"},
-	{"/git", "Read-only Git workspace", "Project"},
+	{"/git", "Git status, commit and branches", "Project"},
 	{"/servers", "Browse local SSH server profiles", "SSH"},
 	{"/ssh", "Connect to a configured SSH server", "SSH"},
 	{"/logs", "View SSH access history", "SSH"},
