@@ -75,7 +75,7 @@ func (m Model) runGitCommand(msg gitNativeReady) (tea.Model, tea.Cmd) {
 	process := &gitTerminalProcess{ctx: m.ctx, cmd: msg.cmd, args: msg.args}
 	return m, tea.Exec(process, func(err error) tea.Msg {
 		if err != nil {
-			err = fmt.Errorf("Git command failed (%v); resolve the error shown in the terminal and retry", err)
+			err = fmt.Errorf("git command failed (%v); resolve the error shown in the terminal and retry", err)
 		}
 		return gitWriteDone{id: msg.id, notice: "Git command completed; repository refreshed", err: err}
 	})

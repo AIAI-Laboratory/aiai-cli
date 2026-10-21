@@ -96,7 +96,7 @@ func (s *Service) InteractiveCommand(ctx context.Context, path string, args []st
 	}
 	for _, arg := range args {
 		if strings.ContainsRune(arg, 0) {
-			return nil, fmt.Errorf("Git arguments cannot contain NUL")
+			return nil, fmt.Errorf("git arguments cannot contain NUL")
 		}
 	}
 	root, err := filepath.Abs(path)

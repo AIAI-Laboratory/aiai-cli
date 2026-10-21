@@ -26,7 +26,7 @@ The script automatically detects your OS and architecture (macOS/Linux on ARM64/
 
 ### Build from source (developers)
 
-Go 1.27.2+ is required to build from source:
+Go 1.27.3+ is required to build from source:
 
 ```bash
 go build -trimpath -o bin/aiai ./cmd/aiai

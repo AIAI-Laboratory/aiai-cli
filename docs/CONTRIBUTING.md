@@ -146,7 +146,7 @@ test(command): add golden test for json dry-run output
 ### 1. Prerequisites & Environment Setup
 
 Ensure you have the following installed locally:
-- **Go**: 1.27+ (`go version`)
+- **Go**: 1.27.3+ (`go version`)
 - **Git**: 2.30+
 - **golangci-lint**: latest v2 (`golangci-lint --version`)
 - **goimports**: managed via Go tool directives in `go.mod` (or `go install golang.org/x/tools/cmd/goimports@latest`)
