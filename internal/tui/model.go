@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -19,6 +19,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
@@ -59,6 +60,10 @@ const (
 type Action struct {
 	SSHAlias    string
 	GenerateKey *sshmanager.KeyGenerateRequest
+	Zen         bool
+	Monitor     bool
+	Git         bool
+	Workspace   bool
 }
 
 type Options struct {
@@ -69,6 +74,7 @@ type Options struct {
 	Version   string
 	SSH       sshmanager.Manager
 	Clipboard func(string) error
+	Context   func(context.Context) string
 }
 
 type Model struct {
@@ -87,9 +93,10 @@ type Model struct {
 	confirmYes         bool
 	inputs             []textinput.Model
 	command            textinput.Model
+	homeCategory       string
 	search             textinput.Model
 	searching          bool
-	workspace          string
+	progress           spinner.Model
 	viewport           viewport.Model
 	width              int
 	height             int
@@ -122,9 +129,11 @@ type Model struct {
 	keyDeleteYes       bool
 	clipboard          func(string) error
 	action             Action
+	projectContext     string
 }
 
 type (
+	contextMsg string
 	plannedMsg struct {
 		plan scaffold.Plan
 		err  error
@@ -205,22 +214,22 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 		height:     30,
 		viewport:   viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
 	}
+	m.progress = spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	if !opts.NoColor {
+		m.progress.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(style.Accent))
+	}
 	if m.clipboard == nil {
 		m.clipboard = clipboard.WriteAll
 	}
-	m.workspace, _ = os.Getwd()
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(m.workspace, home+string(os.PathSeparator)) {
-		m.workspace = "~" + strings.TrimPrefix(m.workspace, home)
-	}
 	m.command = textinput.New()
 	m.command.Prompt = ""
-	m.command.Placeholder = "Type a command, or choose below…"
+	m.command.Placeholder = "Search commands…"
 	m.command.CharLimit = 64
 	m.styleInput(&m.command)
 	m.command.Focus()
 	m.search = textinput.New()
-	m.search.Prompt = ""
-	m.search.Placeholder = "Filter by name, host, user, fingerprint…"
+	m.search.Prompt = "/ "
+	m.search.Placeholder = "Search name, host, user, or fingerprint…"
 	m.search.CharLimit = 128
 	m.styleInput(&m.search)
 	for i, value := range []string{opts.Request.ProjectName, opts.Request.TargetDir, opts.Request.PackageName} {
@@ -271,18 +280,16 @@ func Run(ctx context.Context, planner project.Planner, executor scaffold.Executo
 
 func (m Model) Init() tea.Cmd {
 	commands := []tea.Cmd{textinput.Blink}
+	if m.opts.Context != nil {
+		commands = append(commands, func() tea.Msg { return contextMsg(m.opts.Context(m.ctx)) })
+	}
 	if m.auth != nil && !m.opts.StartInit {
 		commands = append(commands, func() tea.Msg {
 			result, err := m.auth.Cached()
 			return authCachedMsg{result: result, err: err}
 		})
 	}
-	if m.updater != nil && !m.opts.StartInit {
-		commands = append(commands, func() tea.Msg {
-			res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, false)
-			return updateCheckedMsg{result: res, err: err, manual: false}
-		})
-	}
+	// Startup is offline. /update remains the explicit network entry point.
 	return tea.Batch(commands...)
 }
 
@@ -290,12 +297,25 @@ func (m Model) theme() Theme {
 	return NewTheme(max(1, min(100, m.width-4)), m.opts.NoColor)
 }
 
+func (m Model) busy() bool {
+	switch m.screen {
+	case planning, applying, authStarting, authWaiting, loggingOut, updating, serverLoading, logLoading, keyLoading:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m Model) withProgress(cmd tea.Cmd) tea.Cmd {
+	return tea.Batch(cmd, m.progress.Tick)
+}
+
 func (m Model) styleInput(input *textinput.Model) {
 	styles := textinput.Styles{}
 	if !m.opts.NoColor {
-		styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#808080"))
+		styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(style.Muted))
 		styles.Blurred.Placeholder = styles.Focused.Placeholder
-		styles.Cursor.Color = lipgloss.Color("#FF5F56")
+		styles.Cursor.Color = lipgloss.Color(style.Accent)
 	}
 	styles.Cursor.Blink = true
 	input.SetStyles(styles)
@@ -303,8 +323,8 @@ func (m Model) styleInput(input *textinput.Model) {
 
 func (m *Model) resize() {
 	width := m.theme().Width()
-	m.command.SetWidth(max(1, width-2))
-	m.search.SetWidth(max(1, width-12))
+	m.command.SetWidth(max(1, width-6))
+	m.search.SetWidth(max(1, width-6))
 	for i := range m.inputs {
 		m.inputs[i].SetWidth(max(1, width-4))
 	}

@@ -8,9 +8,8 @@ import (
 
 func DeviceLogin(device auth.DeviceAuthorization, t Theme) string {
 	body := t.Heading("Sign in with GitHub", "Complete authorization in your browser.") +
-		"Open: " + device.VerificationURI + "\n\n" +
-		t.Title(device.UserCode) + "\n\n" +
-		t.Muted("Waiting for authorization…")
+		"Open: " + t.Truncate(device.VerificationURI, max(1, t.Width()-7)) + "\n\n" +
+		t.Title(device.UserCode)
 	if device.BrowserOpenWarning != "" {
 		body += "\n\n" + t.Warn(device.BrowserOpenWarning)
 	}
@@ -25,9 +24,9 @@ func AuthProfile(user auth.User, storage string, t Theme) string {
 	if user.Name != "" {
 		body.WriteString(user.Name + "\n")
 	}
-	body.WriteString("GitHub ID: " + user.GitHubID + "\n")
+	body.WriteString("GitHub ID: " + t.Truncate(user.GitHubID, max(1, t.Width()-11)) + "\n")
 	if storage != "" {
-		body.WriteString("\n" + t.Muted("Credential store: "+storage))
+		body.WriteString("\n" + t.Muted("Credential store: "+t.Truncate(storage, max(1, t.Width()-18))))
 	}
 	return body.String()
 }

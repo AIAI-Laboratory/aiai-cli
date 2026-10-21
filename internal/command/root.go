@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	gitlocal "github.com/AIAI-Laboratory/aiai-cli/internal/git"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
@@ -19,39 +22,57 @@ import (
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui"
+	devtui "github.com/AIAI-Laboratory/aiai-cli/internal/tui/developer"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/workspace"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
 type Dependencies struct {
-	Planner  project.Planner
-	Executor scaffold.Executor
-	Registry templates.TemplateRegistry
-	In       io.Reader
-	Out      io.Writer
-	Err      io.Writer
-	Version  string
-	Auth     auth.Authenticator
-	Updater  updater.Service
-	SSH      sshmanager.Manager
+	Planner   project.Planner
+	Executor  scaffold.Executor
+	Registry  templates.TemplateRegistry
+	In        io.Reader
+	Out       io.Writer
+	Err       io.Writer
+	Version   string
+	Auth      auth.Authenticator
+	Updater   updater.Service
+	SSH       sshmanager.Manager
+	Zen       zen.Repository
+	Monitor   monitor.Collector
+	Git       *gitlocal.Service
+	Workspace *workspace.Service
 	// Interactive can be injected by tests; production uses actual descriptors.
 	Interactive func() bool
 }
 
 type state struct {
-	deps    Dependencies
-	json    bool
-	noColor bool
-	verbose bool
-	plan    *scaffold.Plan
-	result  *scaffold.Result
-	version string
-	status  string
-	auth    *output.Auth
-	update  *output.Update
-	ssh     *output.SSH
+	deps                          Dependencies
+	json                          bool
+	noColor                       bool
+	verbose                       bool
+	plan                          *scaffold.Plan
+	result                        *scaffold.Result
+	version                       string
+	status                        string
+	auth                          *output.Auth
+	update                        *output.Update
+	ssh                           *output.SSH
+	zen                           *output.Zen
+	system                        *monitor.Snapshot
+	git                           any
+	workspace                     any
+	zenProject, zenRepo, zenLabel string
 }
 
 func Run(ctx context.Context, args []string, deps Dependencies) int {
+	if deps.Git == nil {
+		deps.Git = &gitlocal.Service{}
+	}
+	if deps.Workspace == nil {
+		deps.Workspace, _ = workspace.New("", deps.Git, deps.Zen)
+	}
 	s := &state{deps: deps, status: "ok"}
 	root := s.root()
 	// Detect machine output even when flag parsing stops at an unknown option.
@@ -60,7 +81,7 @@ func Run(ctx context.Context, args []string, deps Dependencies) int {
 	err := root.ExecuteContext(ctx)
 	code := ExitCode(err)
 	if s.json {
-		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, SSH: s.ssh}
+		e := output.Envelope{Status: s.status, Plan: s.plan, Result: s.result, Version: s.version, Auth: s.auth, Update: s.update, SSH: s.ssh, Zen: s.zen, System: s.system, Git: s.git, Workspace: s.workspace}
 		if err != nil {
 			e.Status = "error"
 			e.Error = &output.Error{Code: code, Message: err.Error()}
@@ -94,6 +115,8 @@ func ExitCode(err error) int {
 	case errors.Is(err, auth.ErrIO):
 		return 4
 	case errors.Is(err, sshmanager.ErrStorage), errors.Is(err, sshmanager.ErrSSHMissing):
+		return 4
+	case errors.Is(err, zen.ErrStorage):
 		return 4
 	default:
 		return 2
@@ -137,7 +160,7 @@ func (s *state) root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&s.json, "json", false, "Emit one JSON envelope (schema version 1)")
 	root.PersistentFlags().BoolVar(&s.noColor, "no-color", false, "Disable terminal colors")
 	root.PersistentFlags().BoolVar(&s.verbose, "verbose", false, "Write diagnostic logs to stderr")
-	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.serverCommand(), s.sshCommand(), s.logCommand(), s.keyCommand())
+	root.AddCommand(s.initCommand(), s.versionCommand(), s.loginCommand(), s.whoamiCommand(), s.logoutCommand(), s.updateCommand(), s.serverCommand(), s.sshCommand(), s.logCommand(), s.keyCommand(), s.zenCommand(), s.monitorCommand(), s.systemCommand(), s.gitCommand(), s.workspaceCommand())
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		s.status = "help"
@@ -173,7 +196,44 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
 	}
 	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
+	opts.Context = func(ctx context.Context) string {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		st, err := s.deps.Git.Status(ctx, ".")
+		if err != nil {
+			return ""
+		}
+		name := st.Name
+		if s.deps.Workspace != nil {
+			items, e := s.deps.Workspace.List(ctx, false)
+			if e == nil {
+				for _, p := range items {
+					if p.Root == st.Root {
+						name = p.Name
+						break
+					}
+				}
+			}
+		}
+		return safe(fmt.Sprintf("%s · %s · %d changes", name, branchLabel(st), len(st.Changes)))
+	}
 	result, plan, action, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
+	for err == nil && (action.Monitor || action.Git || action.Workspace || action.Zen) {
+		switch {
+		case action.Monitor:
+			err = s.runMonitor(ctx, time.Second)
+		case action.Git:
+			err = s.runDeveloper(ctx, devtui.Options{Mode: "git", Path: "."})
+		case action.Workspace:
+			err = s.runDeveloper(ctx, devtui.Options{})
+		case action.Zen:
+			err = s.runZen(ctx, 0, zen.Config{})
+		}
+		if err != nil {
+			return err
+		}
+		result, plan, action, err = tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
+	}
 	s.plan, s.result = plan, result
 	if err == nil && action.SSHAlias != "" {
 		return s.deps.SSH.Connect(ctx, action.SSHAlias, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
@@ -186,6 +246,9 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		fmt.Fprintln(s.human(), "\nSSH key generated:")
 		printKey(s.human(), key)
 		return nil
+	}
+	if err == nil && action.Zen {
+		return s.runZen(ctx, 0, zen.Config{})
 	}
 	if result != nil && err == nil && !s.json {
 		fmt.Fprint(s.human(), output.ResultText(*result))

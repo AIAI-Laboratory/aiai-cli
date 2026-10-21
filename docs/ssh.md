@@ -94,11 +94,11 @@ From the interactive AIAI home screen, use `/servers` to browse saved profiles,
 Select a key in `/keys`, then press `c` to copy its public key. AIAI-managed
 keys also offer `d` to delete the private/public pair after confirmation;
 keys discovered in `~/.ssh` are never deleted by the TUI.
-Press `/` on the server or key list to focus its filter. While the filter is
+Press `/` on the server or key list to focus search. While search is
 focused, every printable key is treated as text. Enter keeps the filter and
 returns to list navigation; Esc clears it. A subsequent Esc returns.
-Selecting
-a destination from `/ssh` closes the active Bubble Tea screen before OpenSSH is
+Server profiles use a single-column list; Enter opens the selected profile's
+details. Selecting a destination from `/ssh` closes the active Bubble Tea screen before OpenSSH is
 started. `/keygen` similarly closes the TUI before `ssh-keygen` prompts for a
 passphrase. Both tools therefore receive normal terminal input and output safely.
 

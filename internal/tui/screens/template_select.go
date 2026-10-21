@@ -12,7 +12,7 @@ func TemplateSelect(items []TemplateItem, cursor int, t Theme) string {
 		return body + t.Muted("No templates available. Esc to return.")
 	}
 	for i, item := range items {
-		body += t.Choice(item.DisplayName, "", i == cursor) + "  " + t.Muted(item.Description) + "\n\n"
+		body += t.Choice(item.DisplayName, item.Description, i == cursor)
 	}
 	return body
 }

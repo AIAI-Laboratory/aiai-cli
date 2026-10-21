@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,7 +21,7 @@ func (m Model) View() tea.View {
 	m.viewport.SetContent(content)
 	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
 		for line, text := range strings.Split(content, "\n") {
-			if strings.HasPrefix(text, "> ") {
+			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
 				if m.screen == form && m.focus < 3 {
 					m.viewport.EnsureVisible(line+1, 0, 1)
@@ -41,7 +42,10 @@ func (m Model) content() string {
 	var body string
 	switch m.screen {
 	case home:
-		body = screens.Home(m.cursor, m.command.Value(), t)
+		body = screens.Home(m.cursor, m.command.Value(), m.homeCategory, t)
+		if m.projectContext != "" {
+			body = t.Muted(t.Truncate(m.projectContext, t.Width())) + "\n\n" + body
+		}
 	case selection:
 		items := make([]screens.TemplateItem, len(m.templates))
 		for i, tmpl := range m.templates {
@@ -62,14 +66,14 @@ func (m Model) content() string {
 			body = t.Accent("! "+m.formError) + "\n\n" + body
 		}
 	case planning:
-		body = t.Heading("Building your preview…", "Rendering the template and checking destination files.")
+		body = m.loading("Building your preview", "Rendering the template and checking destination files.")
 	case preview:
 		body = screens.Preview(*m.plan, m.opts.DryRun, t)
 	case confirmation:
 		body = t.Heading("Ready to create?", "Apply the file operations you just reviewed.") + t.Muted(m.plan.TargetDir) + "\n\n" +
 			t.Choice("No, return to preview", "", !m.confirmYes) + t.Choice("Yes, generate files", "", m.confirmYes)
 	case applying:
-		body = t.Heading("Creating your project…", "Writing the files from your approved plan.")
+		body = m.loading("Creating your project", "Writing files from the approved plan.")
 		if m.canceling {
 			body = t.Warn("Canceling; waiting for the current file to finish…")
 		}
@@ -80,12 +84,12 @@ func (m Model) content() string {
 	case about:
 		body = t.Heading("Small tool. Solid foundations.", "AIAI CLI · "+m.opts.Version) + "Deterministic project scaffolding.\nEmbedded templates. Offline generation.\n\n" + t.Muted("Choose a template, review the plan, and start building.")
 	case authStarting:
-		body = t.Heading("Connecting to AIAI…", "Preparing your authentication session.")
+		body = m.loading("Connecting to AIAI", "Preparing your authentication session.")
 	case authWaiting:
 		if m.authDevice == nil {
-			body = t.Heading("Connecting to AIAI…", "Preparing your authentication session.")
+			body = m.loading("Connecting to AIAI", "Preparing your authentication session.")
 		} else {
-			body = screens.DeviceLogin(*m.authDevice, t)
+			body = screens.DeviceLogin(*m.authDevice, t) + "\n\n" + m.progress.View() + " " + t.Muted("Waiting for authorization…")
 		}
 	case authResult:
 		body = screens.AuthResult(m.authText, m.authWarn, m.authOK, t)
@@ -99,7 +103,7 @@ func (m Model) content() string {
 		body = t.Heading("Sign out?", "This removes the AIAI credential stored on this device.") +
 			t.Choice("No, keep me signed in", "", !m.logoutYes) + t.Choice("Yes, sign out", "", m.logoutYes)
 	case loggingOut:
-		body = t.Heading("Signing out…", "Revoking the server session and removing local credentials.")
+		body = m.loading("Signing out", "Revoking the server session and removing local credentials.")
 	case updatePrompt:
 		tag := ""
 		bodyText := ""
@@ -113,7 +117,7 @@ func (m Model) content() string {
 		if m.updateRelease != nil {
 			tag = m.updateRelease.TagName
 		}
-		body = screens.Updating(tag, m.updateStep, t)
+		body = m.progress.View() + " " + screens.Updating(tag, m.updateStep, t)
 	case updateResult:
 		tag := ""
 		if m.updateRelease != nil {
@@ -121,7 +125,7 @@ func (m Model) content() string {
 		}
 		body = screens.UpdateResult(tag, m.updateResultOK, m.updateErr, m.updateResultCursor, t)
 	case serverLoading:
-		body = t.Heading("Loading SSH servers…", "Reading local profiles from this computer.")
+		body = m.loading("Loading SSH servers", "Reading local profiles from this computer.")
 	case serverList:
 		body = screens.ServerList(m.visibleServers(), m.cursor, m.serverConnect, m.search.Value(), t)
 	case serverDetail:
@@ -132,13 +136,13 @@ func (m Model) content() string {
 			body = screens.ServerDetail(servers[m.cursor], t)
 		}
 	case logLoading:
-		body = t.Heading("Loading SSH history…", "Reading local access logs.")
+		body = m.loading("Loading SSH history", "Reading local access logs.")
 	case accessLogs:
 		body = screens.AccessLogs(m.logs, t)
 	case sshFailure:
 		body = screens.SSHFailure(m.sshErr, t)
 	case keyLoading:
-		body = t.Heading("Finding SSH keys…", "Scanning AIAI's managed key directory and ~/.ssh.")
+		body = m.loading("Finding SSH keys", "Scanning AIAI's managed key directory and ~/.ssh.")
 	case keyList:
 		body = screens.KeyList(m.visibleKeys(), m.keyQuery, m.search.Value(), m.keyNotice, m.cursor, t)
 	case keyDetail:
@@ -159,9 +163,68 @@ func (m Model) content() string {
 	return lipgloss.NewStyle().Width(t.Width()).Render(body)
 }
 
+func (m Model) loading(title, subtitle string) string {
+	return m.progress.View() + " " + m.theme().Title(title) + "\n" + m.theme().Muted(subtitle)
+}
+
 func (m Model) chrome() (string, string) {
 	fit := lipgloss.NewStyle().Width(m.theme().Width())
 	return fit.Render(m.header() + "\n" + m.toolbar()), fit.Render("\n" + m.footer())
+}
+
+func (m Model) header() string {
+	t := m.theme()
+	if m.screen == home && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" {
+		return m.welcomeHeader()
+	}
+	return t.Title("AIAI CLI") + "\n" + t.Rule()
+}
+
+func (m Model) welcomeHeader() string {
+	t := m.theme()
+	version := strings.TrimPrefix(m.opts.Version, "v")
+	title := t.Title("AIAI CLI")
+	if version != "" {
+		title += "  " + t.Muted(version)
+	}
+
+	path, err := os.UserHomeDir()
+	if err != nil || path == "" {
+		path, _ = os.Getwd()
+	}
+	status := t.Good("●") + " " + t.Muted("Offline templates")
+	if m.authUser != nil && m.authUser.Login != "" {
+		status += t.Muted(" · Signed in as @" + m.authUser.Login)
+	}
+
+	if t.Width() < 60 {
+		return truncate(t.Accent("◆")+" "+title, t.Width()) + "\n" +
+			truncate(t.Muted("Your next project starts here."), t.Width()) + "\n" +
+			truncate(t.Muted(path), t.Width()) + "\n" +
+			truncate(status, t.Width()) + "\n" + t.Rule()
+	}
+
+	logo := strings.Split(m.logo(), "\n")
+	info := []string{
+		"",
+		title,
+		t.Muted("Your next project starts here."),
+		"",
+		t.Muted(path),
+		status,
+		"",
+	}
+	logoWidth := 0
+	for _, logoRow := range logo {
+		logoWidth = max(logoWidth, lipgloss.Width(logoRow))
+	}
+	textWidth := max(1, t.Width()-logoWidth-3)
+	rows := make([]string, len(logo))
+	for i, logoRow := range logo {
+		padding := strings.Repeat(" ", logoWidth-lipgloss.Width(logoRow))
+		rows[i] = logoRow + padding + "   " + truncate(info[i], textWidth)
+	}
+	return strings.Join(rows, "\n") + "\n" + t.Rule()
 }
 
 // The open A and red i² reproduce the supplied AIAI mark in terminal cells.
@@ -183,42 +246,16 @@ func (m Model) logo() string {
 	return strings.Join(a, "\n")
 }
 
-func (m Model) header() string {
-	t := m.theme()
-	version := m.opts.Version
-	if version == "" {
-		version = "dev"
-	}
-	name := t.Title("AIAI CLI") + "  " + t.Muted(version)
-	if m.height < 22 || t.Width() < 55 || (m.screen != home && m.screen != about) {
-		return name + "\n" + t.Rule()
-	}
-	authStatus := "Not signed in"
-	if m.authUser != nil {
-		authStatus = "Signed in as @" + m.authUser.Login
-	}
-	detail := "\n" + name + "\n" + t.Muted("Your next project starts here.") + "\n\n" +
-		t.Muted(m.workspace) + "\n" + t.Good("●") + t.Muted(" Offline templates · "+authStatus)
-	detail = lipgloss.NewStyle().Width(max(1, t.Width()-24)).MaxWidth(max(1, t.Width()-24)).Render(detail)
-	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.logo(), "    ", detail) + "\n\n" + t.Rule()
-}
-
 func (m Model) toolbar() string {
 	t := m.theme()
 	if m.screen == home {
-		return t.Accent("❯ ") + m.command.View() + "\n" + t.Rule() + "\n"
+		return t.Accent("> ") + m.command.View() + "\n" + t.Rule()
 	}
 	if m.screen == serverList || m.screen == keyList {
-		section := "SSH servers"
-		if m.screen == keyList {
-			section = "SSH keys"
+		if !m.searching && m.search.Value() == "" {
+			return ""
 		}
-		label := t.Muted("Filter  ")
-		if m.searching {
-			label = t.Accent("Filter  ")
-		}
-		return t.Muted("AIAI / "+section) + "\n\n" +
-			label + m.search.View() + "\n" + t.Rule() + "\n"
+		return m.search.View() + "\n" + t.Rule()
 	}
 	step := -1
 	switch m.screen {
@@ -232,17 +269,9 @@ func (m Model) toolbar() string {
 		step = 3
 	}
 	if step >= 0 {
-		return t.Step(step) + "\n\n"
+		return t.Step(step) + "\n"
 	}
-	labels := map[screen]string{
-		help: "Help", about: "About", authStarting: "Authentication", authWaiting: "GitHub login",
-		authResult: "Authentication", profile: "Account", logoutConfirmation: "Sign out", loggingOut: "Sign out",
-		updatePrompt: "Update", updating: "Update", updateResult: "Update",
-		serverLoading: "SSH", serverList: "SSH servers", serverDetail: "SSH server",
-		logLoading: "SSH logs", accessLogs: "SSH logs", sshFailure: "SSH",
-		keyLoading: "SSH keys", keyList: "SSH keys", keyDetail: "SSH key", keyDeleteConfirmation: "Delete SSH key",
-	}
-	return t.Muted("AIAI / "+labels[m.screen]) + "\n\n"
+	return ""
 }
 
 func (m Model) footer() string {
@@ -250,7 +279,11 @@ func (m Model) footer() string {
 	hint := "↑/↓ navigate · enter select · esc back"
 	switch m.screen {
 	case home:
-		hint = "↑/↓ navigate · enter select · tab complete"
+		if m.homeCategory == "" && m.command.Value() == "" {
+			hint = "↑/↓ choose · enter open"
+		} else {
+			hint = "↑/↓ choose · enter select · tab complete"
+		}
 	case form:
 		hint = "tab next · shift+tab previous · enter continue"
 	case preview:
@@ -259,7 +292,7 @@ func (m Model) footer() string {
 			hint = "↑/↓ scroll · esc edit options"
 		}
 	case confirmation:
-		hint = "↑/↓ choose · enter confirm · esc preview"
+		hint = "←/→ choose · enter confirm · esc preview"
 	case result:
 		hint = "↑/↓ scroll · enter finish"
 	case help, about:
@@ -269,7 +302,7 @@ func (m Model) footer() string {
 	case authResult, profile:
 		hint = "enter or esc back"
 	case logoutConfirmation:
-		hint = "↑/↓ choose · enter confirm · esc back"
+		hint = "←/→ choose · enter confirm · esc back"
 	case updatePrompt:
 		hint = "↑/↓ choose · enter confirm · esc back"
 	case updateResult:
@@ -277,37 +310,52 @@ func (m Model) footer() string {
 	case keyDetail:
 		hint = "c copy public key · d delete managed key · esc back"
 	case keyDeleteConfirmation:
-		hint = "↑/↓ choose · enter confirm · esc back"
+		hint = "←/→ choose · enter confirm · esc back"
 	case serverList:
 		if m.serverConnect {
-			hint = "↑/↓ choose · / filter · enter connect · esc back"
+			hint = "↑/↓ choose · / search · enter connect · esc back"
 		} else {
-			hint = "↑/↓ choose · / filter · enter details · esc back"
+			hint = "↑/↓ choose · / search · enter details · esc back"
 		}
 	case serverDetail, sshFailure:
 		hint = "enter or esc back"
 	case accessLogs:
 		hint = "↑/↓ scroll · esc back"
 	case keyList:
-		hint = "↑/↓ choose · / filter · enter details · esc back"
+		hint = "↑/↓ choose · / search · enter details · esc back"
 	case planning, applying, authStarting, loggingOut, updating, serverLoading, logLoading, keyLoading:
 		hint = "ctrl+c cancel safely"
 	}
 	if t.Width() < 48 {
-		hint = "↑/↓ · tab · enter · esc · ?"
-	}
-	status := "? help · ctrl+c cancel"
-	if m.screen == home {
-		status = "Type / to browse commands · /help for shortcuts · esc quit"
-	}
-	if m.opts.DryRun {
-		status = "Preview only · No files will be written"
-	}
-	if t.Width() < 48 {
-		status = "ctrl+c cancel"
-		if m.screen == home {
-			status = "/ commands · esc quit"
+		switch m.screen {
+		case home, selection:
+			hint = "↑/↓ choose · enter open · esc back"
+		case form:
+			hint = "tab next · enter continue · esc back"
+		case serverList, keyList:
+			hint = "↑/↓ choose · / search · enter open · esc back"
+		case confirmation, logoutConfirmation, keyDeleteConfirmation:
+			hint = "←/→ choose · enter confirm · esc back"
+		case keyDetail:
+			hint = "c copy · d delete · esc back"
+		case planning, applying, authStarting, loggingOut, updating, serverLoading, logLoading, keyLoading:
+			hint = "ctrl+c cancel"
+		default:
+			hint = "↑/↓ scroll · enter open · esc back"
 		}
 	}
-	return t.Keys(hint) + "\n" + t.Muted(status)
+	status := " · ? help"
+	if m.screen == home {
+		status = " · esc quit"
+		if m.homeCategory != "" {
+			status = " · esc categories"
+		}
+	}
+	if m.opts.DryRun {
+		status = " · preview only"
+	}
+	if t.Width() < 48 {
+		status = ""
+	}
+	return t.Keys(hint) + t.Muted(status)
 }

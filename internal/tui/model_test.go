@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
 )
 
@@ -128,10 +130,36 @@ func press(m Model, code rune) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
+func runCmd(m Model, cmd tea.Cmd) (Model, tea.Cmd) {
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		next, follow := m.Update(msg)
+		return next.(Model), follow
+	}
+	var follow tea.Cmd
+	for _, nested := range batch {
+		msg = nested()
+		if _, tick := msg.(spinner.TickMsg); tick {
+			continue
+		}
+		next, nextCmd := m.Update(msg)
+		m = next.(Model)
+		if nextCmd != nil {
+			follow = nextCmd
+		}
+	}
+	return m, follow
+}
+
 func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	calls := 0
 	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, nil, Options{})
 	defer m.cancel()
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != home || m.homeCategory != "Project" {
+		t.Fatal("Project category did not open")
+	}
 	m, _ = press(m, tea.KeyEnter)
 	if m.screen != selection {
 		t.Fatal(m.screen)
@@ -146,8 +174,7 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	if m.screen != planning || calls != 0 {
 		t.Fatal("wrote before planning")
 	}
-	next, _ := m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != preview {
 		t.Fatal(m.screen)
 	}
@@ -165,8 +192,7 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	if m.screen != applying {
 		t.Fatal(m.screen)
 	}
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != result || calls != 1 || len(m.result.Completed) != 1 {
 		t.Fatal("generation did not complete")
 	}
@@ -223,12 +249,15 @@ func TestTextInputsDoNotCaptureShortcuts(t *testing.T) {
 
 func TestServerSearchAndBackNavigation(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{NoColor: true})
 	defer m.cancel()
 	m.screen = serverList
 	m.servers = []sshmanager.Server{
 		{Alias: "production", Host: "prod.example.com", Username: "deploy"},
 		{Alias: "staging", Host: "staging.example.com", Username: "ubuntu"},
+	}
+	if toolbar := m.toolbar(); toolbar != "" {
+		t.Fatalf("idle list should hide search: %q", toolbar)
 	}
 
 	m, _ = press(m, tea.KeyDown)
@@ -244,6 +273,9 @@ func TestServerSearchAndBackNavigation(t *testing.T) {
 	m, _ = press(m, '/')
 	if !m.searching {
 		t.Fatal("/ did not focus server search")
+	}
+	if toolbar := m.toolbar(); !strings.HasPrefix(toolbar, "/ ") || strings.Contains(toolbar, "Filter") {
+		t.Fatalf("search field is missing: %q", toolbar)
 	}
 	m = typeCommand(m, "production")
 	if got := m.visibleServers(); len(got) != 1 || got[0].Alias != "production" {
@@ -277,8 +309,27 @@ func typeCommand(m Model, value string) Model {
 
 func TestCommandPalette(t *testing.T) {
 	calls := 0
-	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{})
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, nil, nil, nil, Options{NoColor: true})
 	defer m.cancel()
+	homeView := m.content()
+	if !strings.Contains(homeView, "Project") || !strings.Contains(homeView, "SSH") || !strings.Contains(homeView, "/help") || !strings.Contains(homeView, "/quit") || strings.Contains(homeView, "/servers") {
+		t.Fatal("home commands are not grouped by category")
+	}
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyEnter)
+	if m.homeCategory != "SSH" || !strings.Contains(m.content(), "/servers") || strings.Contains(m.content(), "/login") {
+		t.Fatal("SSH category did not reveal only SSH commands")
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.homeCategory != "" || !strings.Contains(m.content(), "Account") {
+		t.Fatal("Esc did not return to categories")
+	}
+	m.cursor = len(screens.Categories())
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != help {
+		t.Fatal("Help is not directly selectable from Home")
+	}
+	m, _ = press(m, tea.KeyEscape)
 	m = typeCommand(m, "/abo")
 	if !strings.Contains(m.content(), "/about") || strings.Contains(m.content(), "/init") {
 		t.Fatal("command filter did not narrow the menu")
@@ -347,11 +398,65 @@ func TestViewsFitTerminal(t *testing.T) {
 				if strings.Contains(view, "[38;") || strings.Contains(view, "[48;") {
 					t.Fatal("color emitted with NoColor")
 				}
-				if s == form && size[0] >= 32 && size[1] >= 12 && !strings.Contains(view, "Preview project") {
+				if s == form && size[0] >= 32 && size[1] >= 12 && !strings.Contains(view, "Continue to preview") {
 					t.Fatal("focused action is hidden")
 				}
 			})
 		}
+	}
+}
+
+func TestWelcomeHeaderRestoresBrandAndSessionContext(t *testing.T) {
+	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{new(int)}, nil, nil, nil, Options{Version: "v0.4.1", NoColor: true})
+	defer m.cancel()
+	user := auth.User{Login: "octocat"}
+	m.authUser = &user
+
+	header := m.header()
+	if !strings.Contains(header, "AIAI CLI  0.4.1") || !strings.Contains(header, "Your next project starts here.") {
+		t.Fatalf("welcome header is missing the product title or tagline: %q", header)
+	}
+	if !strings.Contains(header, "Offline templates") || !strings.Contains(header, "Signed in as @octocat") {
+		t.Fatalf("welcome header is missing template or account status: %q", header)
+	}
+	if !strings.Contains(header, "▄██▄") || !strings.Contains(header, "▐██▌▐██▌") || !strings.Contains(header, "▄▀▀▄") {
+		t.Fatalf("welcome header is missing the original ASCII logo: %q", header)
+	}
+
+	m.homeCategory = "SSH"
+	categoryHeader := m.header()
+	if strings.Contains(categoryHeader, "Your next project starts here.") || !strings.Contains(categoryHeader, "AIAI CLI") {
+		t.Fatalf("category view should use the compact header: %q", categoryHeader)
+	}
+}
+
+func TestResponsiveSSHPresentation(t *testing.T) {
+	now := time.Now()
+	server := sshmanager.Server{Alias: "production", Host: "prod.example.com", Port: 2222, Username: "deploy", IdentityFile: "/keys/deploy", Description: "Primary deployment host", UpdatedAt: now}
+
+	wide := NewTheme(96, true)
+	wideView := screens.ServerList([]sshmanager.Server{server}, 0, false, "", wide)
+	if strings.Contains(wideView, "SELECTED") || !strings.Contains(wideView, "production") || !strings.Contains(wideView, "deploy@prod.example.com:2222") {
+		t.Fatal("wide server browser did not use the classic single-column list")
+	}
+
+	narrow := NewTheme(36, true)
+	narrowView := screens.ServerList([]sshmanager.Server{server}, 0, false, "", narrow)
+	if strings.Contains(narrowView, "SELECTED") || !strings.Contains(narrowView, "production") {
+		t.Fatal("narrow server browser did not collapse to a readable list")
+	}
+
+	duration := int64(1250)
+	logs := screens.AccessLogs([]sshmanager.AccessLog{{ServerAlias: "production", Host: "prod.example.com", Username: "deploy", StartedAt: now, DurationMS: &duration, Status: sshmanager.StatusSuccess}}, wide)
+	if !strings.Contains(logs, "STATUS") || !strings.Contains(logs, "DESTINATION") || !strings.Contains(logs, "✓ success") {
+		t.Fatal("wide access logs are not rendered as a readable status table")
+	}
+}
+
+func TestUnicodeTruncationUsesTerminalCells(t *testing.T) {
+	got := truncate("服务器-production", 9)
+	if lipgloss.Width(got) > 9 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("unicode truncation produced %q at width %d", got, lipgloss.Width(got))
 	}
 }
 
@@ -374,8 +479,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	if m.screen != serverLoading || cmd == nil {
 		t.Fatal("/servers did not start loading")
 	}
-	next, _ := m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != serverList || !strings.Contains(m.content(), "production") {
 		t.Fatal("/servers did not show profiles")
 	}
@@ -391,8 +495,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("/ssh did not start loading, screen=%d command=%q", m.screen, m.command.Value())
 	}
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != serverList || !m.serverConnect {
 		t.Fatalf("/ssh did not open server chooser: screen=%d connect=%v", m.screen, m.serverConnect)
 	}
@@ -404,8 +507,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	m.sshAlias, m.screen = "", home
 	m = typeCommand(m, "/logs")
 	m, cmd = press(m, tea.KeyEnter)
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != accessLogs || !strings.Contains(m.content(), "production") || !strings.Contains(m.content(), "success") {
 		t.Fatal("/logs did not show access history")
 	}
@@ -415,8 +517,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	if m.screen != keyLoading || cmd == nil {
 		t.Fatal("/keys query did not start key search")
 	}
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != keyList || !strings.Contains(m.content(), "laptop") {
 		t.Fatal("/keys did not show key results")
 	}
@@ -428,8 +529,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("copy action did not start")
 	}
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if copied != "ssh-ed25519 AQID laptop" || !strings.Contains(m.content(), "Public key copied") {
 		t.Fatalf("public key was not copied: %q", copied)
 	}
@@ -442,8 +542,7 @@ func TestSSHCommandPaletteFlows(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("confirmed delete did not start")
 	}
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if manager.removed != "/keys/laptop" || m.screen != keyList || !strings.Contains(m.content(), "Deleted managed key") {
 		t.Fatalf("managed key was not deleted: removed=%q screen=%d", manager.removed, m.screen)
 	}
@@ -471,12 +570,11 @@ func TestAuthCommandPaletteFlow(t *testing.T) {
 	if m.screen != authStarting || cmd == nil {
 		t.Fatal("login did not start")
 	}
-	next, cmd := m.Update(cmd())
-	m = next.(Model)
+	m, cmd = runCmd(m, cmd)
 	if m.screen != authWaiting || m.authDevice == nil || m.authDevice.UserCode != "ABCD-EFGH" || cmd == nil {
 		t.Fatal("device code was not shown")
 	}
-	next, cmd = m.Update(authPollTickMsg{})
+	next, cmd := m.Update(authPollTickMsg{})
 	m = next.(Model)
 	next, cmd = m.Update(cmd())
 	m = next.(Model)
@@ -485,19 +583,17 @@ func TestAuthCommandPaletteFlow(t *testing.T) {
 	}
 	next, cmd = m.Update(authPollTickMsg{})
 	m = next.(Model)
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != authResult || m.authUser == nil || m.authUser.Login != "octocat" {
 		t.Fatal("authorized login did not update the profile")
 	}
 	m, _ = press(m, tea.KeyEnter)
-	if m.screen != home || !strings.Contains(m.header(), "@octocat") {
-		t.Fatal("signed-in status is missing")
+	if m.screen != home || m.authUser == nil || m.authUser.Login != "octocat" {
+		t.Fatal("signed-in state was not retained")
 	}
 	m = typeCommand(m, "/whoami")
 	m, cmd = press(m, tea.KeyEnter)
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != profile || !strings.Contains(m.content(), "GitHub ID: 42") {
 		t.Fatal("whoami did not show the profile")
 	}
@@ -509,8 +605,7 @@ func TestAuthCommandPaletteFlow(t *testing.T) {
 	}
 	m, _ = press(m, tea.KeyDown)
 	m, cmd = press(m, tea.KeyEnter)
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 	if m.screen != authResult || m.authUser != nil || !m.authOK {
 		t.Fatal("logout did not clear the signed-in state")
 	}
@@ -532,8 +627,7 @@ func TestLogoutCancellationWaitsForLocalCleanup(t *testing.T) {
 	if quitCmd != nil || !m.canceling {
 		t.Fatal("cancellation quit before logout cleanup")
 	}
-	next, quitCmd = m.Update(logoutCmd())
-	m = next.(Model)
+	m, quitCmd = runCmd(m, logoutCmd)
 	if quitCmd == nil || m.err != context.Canceled {
 		t.Fatal("logout cleanup did not finish cancellation")
 	}
@@ -701,8 +795,7 @@ func TestAutoUpdateFlowPromptAndApply(t *testing.T) {
 	}
 
 	// Execute apply cmd
-	next, _ = m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 
 	if !u.applied {
 		t.Fatalf("expected ApplyUpdate to be executed")
@@ -739,8 +832,7 @@ func TestManualUpdateCommandFromHome(t *testing.T) {
 		t.Fatalf("expected updating screen when running /update, got %d", m.screen)
 	}
 
-	next, _ := m.Update(cmd())
-	m = next.(Model)
+	m, _ = runCmd(m, cmd)
 
 	if m.screen != updateResult || !m.updateResultOK {
 		t.Fatalf("expected updateResult (up to date), got screen=%d", m.screen)

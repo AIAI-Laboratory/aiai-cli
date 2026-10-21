@@ -16,6 +16,11 @@ func UpdatePrompt(currentVersion, latestVersion, changelog string, cursor int, t
 		if len(lines) > 6 {
 			trimmed = strings.Join(lines[:6], "\n") + "\n…"
 		}
+		lines = strings.Split(trimmed, "\n")
+		for i := range lines {
+			lines[i] = t.Truncate(lines[i], t.Width())
+		}
+		trimmed = strings.Join(lines, "\n")
 		s.WriteString(t.Muted("Release highlights:") + "\n" + t.Muted(trimmed) + "\n\n")
 	}
 

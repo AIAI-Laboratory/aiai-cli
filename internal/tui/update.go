@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
@@ -14,8 +15,17 @@ import (
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case contextMsg:
+		m.projectContext = string(msg)
 	case cancelMsg:
 		return m.stop()
+	case spinner.TickMsg:
+		if !m.busy() {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.progress, cmd = m.progress.Update(msg)
+		return m, cmd
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resize()
@@ -283,7 +293,7 @@ func (m Model) prepare() (tea.Model, tea.Cmd) {
 	}
 	m.formError = ""
 	m.screen = planning
-	return m, func() tea.Msg { p, err := m.planner.Plan(m.ctx, req); return plannedMsg{p, err} }
+	return m, m.withProgress(func() tea.Msg { p, err := m.planner.Plan(m.ctx, req); return plannedMsg{p, err} })
 }
 
 func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -5,9 +5,11 @@ import (
 	"io"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
 
 type Error struct {
@@ -42,17 +44,28 @@ type SSH struct {
 	Keys    *[]sshmanager.Key       `json:"keys,omitempty"`
 }
 
+type Zen struct {
+	Action     string          `json:"action"`
+	Statistics *zen.Statistics `json:"statistics,omitempty"`
+	Sessions   *[]zen.Session  `json:"sessions,omitempty"`
+	Config     *zen.Config     `json:"config,omitempty"`
+}
+
 // Envelope is the versioned machine-output contract. File bodies are omitted.
 type Envelope struct {
-	SchemaVersion int              `json:"schema_version"`
-	Status        string           `json:"status"`
-	Plan          *scaffold.Plan   `json:"plan,omitempty"`
-	Result        *scaffold.Result `json:"result,omitempty"`
-	Error         *Error           `json:"error,omitempty"`
-	Version       string           `json:"version,omitempty"`
-	Auth          *Auth            `json:"auth,omitempty"`
-	Update        *Update          `json:"update,omitempty"`
-	SSH           *SSH             `json:"ssh,omitempty"`
+	SchemaVersion int               `json:"schema_version"`
+	Status        string            `json:"status"`
+	Plan          *scaffold.Plan    `json:"plan,omitempty"`
+	Result        *scaffold.Result  `json:"result,omitempty"`
+	Error         *Error            `json:"error,omitempty"`
+	Version       string            `json:"version,omitempty"`
+	Auth          *Auth             `json:"auth,omitempty"`
+	Update        *Update           `json:"update,omitempty"`
+	SSH           *SSH              `json:"ssh,omitempty"`
+	Zen           *Zen              `json:"zen,omitempty"`
+	System        *monitor.Snapshot `json:"system,omitempty"`
+	Git           any               `json:"git,omitempty"`
+	Workspace     any               `json:"workspace,omitempty"`
 }
 
 func JSON(w io.Writer, e Envelope) error {
