@@ -12,22 +12,20 @@ import (
 )
 
 type gitDialog struct {
-	kind, target, err string
-	cursor            int
+	kind, target, err, title, description, command, warning string
+	args                                                    []string
+	cursor                                                  int
+	offset                                                  int
+	filtering                                               bool
+	category                                                string
+	parentCursor                                            int
+	origin                                                  *gitMenuPosition
 }
 
 type gitWriteDone struct {
 	id     int
 	notice string
 	err    error
-}
-
-var gitActions = []string{
-	"Commit staged changes",
-	"Switch branch",
-	"Create and switch to a new branch",
-	"Stage all changes",
-	"Unstage all changes",
 }
 
 func (m Model) openGitDialog(kind, target string) (tea.Model, tea.Cmd) {
@@ -43,6 +41,34 @@ func (m Model) openGitDialog(kind, target string) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	}
 	return m, nil
+}
+
+func (m Model) dialogHasInput() bool {
+	return m.dialog.kind == "commit" || m.dialog.kind == "create" || m.dialog.kind == "native" || m.dialog.kind == "native-confirm" && m.dialog.warning != "" || m.dialog.kind == "menu" && m.dialog.filtering
+}
+
+func (m Model) matchingActions() []int {
+	indices := []int{}
+	query := strings.ToLower(m.gitInput.Value())
+	for i, action := range gitActions {
+		if query == "" && m.dialog.category != "" && action.category != m.dialog.category {
+			continue
+		}
+		if strings.Contains(strings.ToLower(actionTitle(action)+" "+action.description+" "+action.command), query) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+func (m Model) openNativeAction(action gitAction) (tea.Model, tea.Cmd) {
+	m.notice = ""
+	m.dialog = gitDialog{kind: "native", title: actionTitle(action), description: action.description}
+	m.gitInput.Placeholder = "Git command, for example pull --rebase"
+	m.gitInput.SetValue(action.command)
+	m.gitInput.CursorEnd()
+	m.gitInput.Focus()
+	return m, textinput.Blink
 }
 
 func (m Model) closeGitDialog() Model {
@@ -112,6 +138,18 @@ func (m Model) gitShortcut(key string) (tea.Model, tea.Cmd, bool) {
 	case "n":
 		next, cmd := m.openGitDialog("create", "")
 		return next, cmd, true
+	case "p":
+		next, cmd := m.openNativeAction(gitAction{label: "Push", command: "push", description: "Push using the configured upstream."})
+		return next, cmd, true
+	case "P", "shift+p":
+		next, cmd := m.openNativeAction(gitAction{label: "Pull", command: "pull --ff-only", description: "Update from upstream; stop if histories diverge."})
+		return next, cmd, true
+	case "f":
+		next, cmd := m.openNativeAction(gitAction{label: "Fetch", command: "fetch --all --prune", description: "Refresh remote tracking branches."})
+		return next, cmd, true
+	case ":":
+		next, cmd := m.openNativeAction(gitAction{label: "Run Git command", description: "Enter Git arguments; quotes work without shell expansion."})
+		return next, cmd, true
 	case "b":
 		m.opts.Page, m.cursor, m.offset = 3, 0, 0
 		m.preview = false
@@ -157,31 +195,83 @@ func (m Model) gitShortcut(key string) (tea.Model, tea.Cmd, bool) {
 
 func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
+		if m.dialog.kind == "native-confirm" {
+			switch key.String() {
+			case "up", "pgup":
+				m.dialog.offset = max(0, m.dialog.offset-1)
+				return m, nil
+			case "down", "pgdown":
+				m.dialog.offset++
+				return m, nil
+			}
+		}
 		switch key.String() {
 		case "esc":
-			return m.closeGitDialog(), nil
+			if m.dialog.kind == "menu" && m.dialog.filtering {
+				m.dialog.filtering = false
+				m.dialog.cursor = 0
+				m.gitInput.SetValue("")
+				m.gitInput.Blur()
+				return m, nil
+			}
+			if m.dialog.kind == "menu" {
+				return m.gitMenuBack(), nil
+			}
+			if m.dialog.kind == "native-confirm" {
+				m.dialog.kind, m.dialog.err = "native", ""
+				m.gitInput.Placeholder = "Git command, for example pull --rebase"
+				m.gitInput.SetValue(m.dialog.command)
+				m.gitInput.CursorEnd()
+				m.gitInput.Focus()
+				return m, textinput.Blink
+			}
+			return m.returnToGitMenu(), nil
 		case "enter":
 			if m.loading {
 				return m, nil
 			}
 			if m.dialog.kind == "menu" {
-				choice := m.dialog.cursor
-				m = m.closeGitDialog()
-				switch choice {
-				case 0:
-					return m.openGitDialog("commit", "")
-				case 1:
-					m.opts.Page, m.cursor, m.offset = 3, 0, 0
-					m.search.SetValue("")
-					m.preview = false
-					return m.refresh()
-				case 2:
-					return m.openGitDialog("create", "")
-				case 3:
-					return m.startGitWrite("stage-all", "", gitlocal.Change{})
-				case 4:
-					return m.startGitWrite("unstage-all", "", gitlocal.Change{})
+				if m.dialog.filtering {
+					m.dialog.filtering = false
+					m.gitInput.Blur()
+					return m, nil
 				}
+				items := m.gitMenuItems()
+				if len(items) == 0 {
+					return m, nil
+				}
+				choice := items[min(m.dialog.cursor, len(items)-1)]
+				if choice.category != "" {
+					m.dialog.category = choice.category
+					m.dialog.parentCursor, m.dialog.cursor = m.dialog.cursor, 0
+					return m, nil
+				}
+				return m.openMenuAction(gitActions[choice.action])
+			}
+			if m.dialog.kind == "native" {
+				args, err := gitlocal.ParseCommand(m.gitInput.Value())
+				if err != nil {
+					m.dialog.err = err.Error()
+					return m, nil
+				}
+				m.dialog.command = m.gitInput.Value()
+				m.dialog.kind, m.dialog.args, m.dialog.err = "native-confirm", args, ""
+				m.dialog.offset = 0
+				m.dialog.warning = commandWarning(args)
+				m.gitInput.SetValue("")
+				if m.dialog.warning != "" {
+					m.gitInput.Placeholder = "Type confirm to continue"
+					return m, textinput.Blink
+				}
+				m.gitInput.Blur()
+				return m, nil
+			}
+			if m.dialog.kind == "native-confirm" {
+				if m.dialog.warning != "" && m.gitInput.Value() != "confirm" {
+					m.dialog.err = "Type confirm to run this operation."
+					return m, nil
+				}
+				return m.prepareGitCommand()
 			}
 			if m.dialog.kind == "commit" && m.status.Staged == 0 {
 				m.dialog.err = "No staged files. Cancel and use Space or A in Changes."
@@ -194,16 +284,38 @@ func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.startGitWrite(m.dialog.kind, m.dialog.target, gitlocal.Change{})
 		}
 		if m.dialog.kind == "menu" {
+			if m.dialog.filtering {
+				var cmd tea.Cmd
+				m.gitInput, cmd = m.gitInput.Update(msg)
+				m.dialog.cursor = 0
+				return m, cmd
+			}
+			last := max(0, len(m.gitMenuItems())-1)
 			switch key.String() {
 			case "up", "k":
 				m.dialog.cursor = max(0, m.dialog.cursor-1)
 			case "down", "j":
-				m.dialog.cursor = min(len(gitActions)-1, m.dialog.cursor+1)
+				m.dialog.cursor = min(last, m.dialog.cursor+1)
+			case "pgup":
+				m.dialog.cursor = max(0, m.dialog.cursor-max(1, m.bodyHeight()-2))
+			case "pgdown":
+				m.dialog.cursor = min(last, m.dialog.cursor+max(1, m.bodyHeight()-2))
+			case "home":
+				m.dialog.cursor = 0
+			case "end":
+				m.dialog.cursor = last
+			case "left":
+				return m.gitMenuBack(), nil
+			case "/":
+				m.dialog.filtering = true
+				m.gitInput.Placeholder = "Find Git action"
+				m.gitInput.Focus()
+				return m, textinput.Blink
 			}
 			return m, nil
 		}
 	}
-	if m.dialog.kind == "commit" || m.dialog.kind == "create" {
+	if m.dialogHasInput() {
 		var cmd tea.Cmd
 		m.gitInput, cmd = m.gitInput.Update(msg)
 		return m, cmd
@@ -216,15 +328,30 @@ func (m Model) gitDialogView(width int) (string, string) {
 	footer := "enter confirm · esc cancel"
 	switch m.dialog.kind {
 	case "menu":
-		rows = append(rows, m.title("Git actions"), "")
-		for i, label := range gitActions {
+		items := m.gitMenuItems()
+		rows = append(rows, m.title(m.gitMenuTitle(len(items))))
+		if m.dialog.filtering {
+			rows = append(rows, m.gitInput.View())
+		} else {
+			rows = append(rows, m.muted("/ search all actions  "+m.gitInput.Value()))
+		}
+		capacity := max(1, m.bodyHeight()-2)
+		start := max(0, m.dialog.cursor-capacity+1)
+		for i := start; i < min(len(items), start+capacity); i++ {
+			label := items[i].label
 			if i == m.dialog.cursor {
 				rows = append(rows, m.accent("> "+label))
 			} else {
 				rows = append(rows, "  "+label)
 			}
 		}
-		footer = "↑↓ select · enter open · esc cancel"
+		if len(items) == 0 {
+			rows = append(rows, "No actions match this search.")
+		}
+		footer = "↑↓ · enter open · / find · esc cancel"
+		if m.dialog.category != "" || m.gitInput.Value() != "" {
+			footer = "↑↓ · enter open · / find · esc back"
+		}
 	case "commit":
 		rows = append(rows, m.title("Commit staged changes"), m.muted(fmt.Sprintf("%s · %d staged files", oneLine(m.status.Branch), m.status.Staged)), "", m.gitInput.View())
 		footer = "enter commit · esc cancel"
@@ -234,9 +361,30 @@ func (m Model) gitDialogView(width int) (string, string) {
 	case "switch":
 		rows = append(rows, m.title("Switch branch"), m.muted(oneLine(m.status.Branch)+" → ")+m.title(oneLine(m.dialog.target)), "", fmt.Sprintf("%d staged · %d unstaged · %d untracked", m.status.Staged, m.status.Unstaged, m.status.Untracked), m.muted("Git will stop if local changes would be overwritten."))
 		footer = "enter switch · esc cancel"
+	case "native":
+		rows = append(rows, m.title(m.dialog.title), m.muted(oneLine(m.status.Branch)+" · "+oneLine(m.status.Upstream)), "", m.gitInput.View(), m.muted(m.dialog.description))
+		footer = "enter review · esc cancel"
+	case "native-confirm":
+		command := strings.Split(ansi.Wrap("git "+gitlocal.FormatArguments(m.dialog.args), width, " "), "\n")
+		capacity := m.bodyHeight() - 2
+		if m.dialog.warning != "" {
+			capacity -= 2
+		}
+		if m.dialog.err != "" {
+			capacity--
+		}
+		capacity = max(1, capacity)
+		start := min(m.dialog.offset, max(0, len(command)-capacity))
+		end := min(len(command), start+capacity)
+		rows = append(rows, m.title(fmt.Sprintf("Run Git command  %d–%d/%d", start+1, end, len(command))), m.muted(pathTail(m.status.Root, width)))
+		rows = append(rows, command[start:end]...)
+		if m.dialog.warning != "" {
+			rows = append(rows, m.dialog.warning, m.gitInput.View())
+		}
+		footer = "↑↓ scroll · enter run · esc edit"
 	}
 	if m.dialog.err != "" {
-		rows = append(rows, "", oneLine(m.dialog.err))
+		rows = append(rows, oneLine(m.dialog.err))
 	}
 	for i := range rows {
 		if m.opts.NoColor {

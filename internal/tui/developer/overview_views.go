@@ -75,6 +75,9 @@ func (m Model) statusView(width, height int) string {
 	if s.Conflicts > 0 {
 		rows = append(rows, m.tone(m.field("Conflicts", fmt.Sprintf("%d files need attention", s.Conflicts), width), style.Accent))
 	}
+	if s.Operation != "" {
+		rows = append(rows, m.field("In progress", s.Operation+" · a actions to continue/abort", width))
+	}
 	rows = append(rows, "", m.title("Tracking · local only"))
 	if s.Upstream == "" {
 		rows = append(rows, m.field("Upstream", "Not configured", width))

@@ -8,7 +8,8 @@ replacement is included in this change.
 - Git: `git`, `git status`, `git changes`, `git diff [--interactive]`,
   `git history`, `git branches`, `git worktrees`, `git activity`, `git board`,
   and `git repo add/list/remove`. Offline, no GitHub authentication. The TUI also
-  supports explicit staging, unstaging, commits, branch switching and creation.
+  supports staging, commits, branches, fetch/pull/push, stash, merge/rebase,
+  history/recovery, tags, remotes, worktrees and an editable native Git command.
 - Workspace: `workspace`, `workspace add/list/show/remove/board/today/activity/path`.
   Explicit registration for Git, non-Git and linked-worktree contexts; unavailable
   directories retain their metadata and saved focus records.
@@ -121,8 +122,10 @@ terminal preference; AIAI does not modify it.
 
 - Git history is deliberately bounded: 100 commits in the TUI, CLI limit 1–1000
   with date/author/branch filters. There is no infinite-scroll history pagination.
-- Ahead/behind is local tracking-ref information. Git writes require explicit
-  TUI actions; background remote refresh, code editing and discard are not exposed.
+- Ahead/behind uses local tracking refs, refreshed by explicit fetch/pull/push.
+  Git actions require user input. Native commands retain Git's terminal,
+  authentication, editors and hooks; command review and confirmation are shown
+  before execution. The actions menu is searchable and scrollable.
 - Crash recovery retains only the last meaningful persisted transition; it may
   undercount time since that transition. It never guesses that an abandoned
   session completed. Apparently live/reused process IDs are treated conservatively.

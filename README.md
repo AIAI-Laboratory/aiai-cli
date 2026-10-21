@@ -130,6 +130,8 @@ Press `a` on any Git page to open the actions menu. Quick shortcuts:
 | `c` | Enter a message and commit staged changes with Enter |
 | `b` | Open local branches; select with ↑/↓ and Enter to review a switch |
 | `n` | Enter a name to create a branch from HEAD and switch to it |
+| `p` / `P` / `f` | Push / pull with fast-forward only / fetch all remotes |
+| `:` | Run a Git command with its native terminal, editor and authentication |
 | Esc in a form | Cancel without running the action |
 
 Commit uses the current index and honors repository hooks and signing settings.
@@ -139,13 +141,43 @@ Operations run asynchronously, show their result, and refresh the current page.
 Printable shortcuts are disabled while typing a message, branch name or search.
 File markers show `[x]` staged, `[-]` partially staged and `[!]` conflicted.
 
+The actions menu opens categories: Changes, Sync, Branches, Stash, History,
+Recovery, Tags, Remotes, Worktrees, Submodules, Undo and Advanced. Use ↑/↓ then
+Enter to open a category or action. Esc returns to the previous menu and restores
+the selected item; cancelling a form returns to its category. Page Up/Down and
+Home/End scroll lists. `/` searches all actions across categories; search results
+include their category, and Esc clears the search.
+It includes fetch, pull (fast-forward or rebase), push, publish with upstream,
+push tags, force-with-lease, local/remote branches, rename/delete/tracking,
+stash save/list/show/apply/pop/drop, merge, rebase (including interactive),
+cherry-pick, revert, amend, history/reflog, conflict continue/abort/skip,
+merge tools, tags, remotes, worktrees, submodules, reset, restore and untracked
+cleanup. Changes also offers interactive hunk staging/unstaging and a commit
+with Git's native editor.
+
+Commands open in an editable form and show their exact arguments before running.
+Operations that discard files or remove/rewrite refs require typing `confirm`.
+`:` (or Advanced → Run Git command) accepts any installed Git command, including
+options not covered by the menu. Arguments support quotes and backslash escapes;
+shell expansion, pipes and command substitutions are not evaluated.
+Long command reviews scroll with ↑/↓ so the confirmation stays visible.
+
+Native commands temporarily hand the terminal to Git so SSH passphrases,
+credential helpers, hooks, pagers, signing and configured editors work normally.
+Press Enter after Git finishes to return to the refreshed TUI; errors and
+conflict output remain readable until then. Git uses its own credentials,
+independently of AIAI account login. No remote request runs in the background.
+Status identifies an in-progress merge, rebase, cherry-pick or revert; resolve
+and stage conflicted files, then choose the corresponding Recovery action.
+
 Queries use argument arrays, NUL-delimited porcelain paths, cancellation,
 12-second query timeouts and bounded output (4 MiB). Queries disable pagers,
 hooks, external diff/textconv and optional index writes. Explicit local writes
-have a two-minute timeout; editors and terminal prompts are disabled. Git
+have a two-minute timeout; editors and terminal prompts are disabled for these
+background index/commit operations. Native commands use the interactive terminal
+and can be interrupted there with Ctrl+C. Git
 ownership checks remain enabled. Diagnostics omit arbitrary Git/hook stderr,
 which can contain credentials, and provide operation-specific guidance.
-Remote operations and destructive working-tree actions are not exposed.
 
 Ahead/behind counts use **local tracking refs**, not a live remote check. History
 queries default to 100 commits and accept `--limit 1..1000`, `--since`, `--until`,

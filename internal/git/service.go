@@ -44,6 +44,7 @@ type Status struct {
 	Unstaged     int      `json:"unstaged"`
 	Untracked    int      `json:"untracked"`
 	Conflicts    int      `json:"conflicts"`
+	Operation    string   `json:"operation,omitempty"`
 	LastCommit   *Commit  `json:"last_commit,omitempty"`
 }
 type Branch struct {
@@ -112,13 +113,7 @@ func (s *Service) execute(ctx context.Context, path string, mutation bool, args 
 	cmd := exec.CommandContext(ctx, exe, append(base, args...)...)
 	cmd.Dir = path
 	cmd.WaitDelay = 2 * time.Second
-	for _, item := range os.Environ() {
-		key, _, _ := strings.Cut(item, "=")
-		if key == "GIT_DIR" || key == "GIT_WORK_TREE" || key == "GIT_INDEX_FILE" || key == "GIT_COMMON_DIR" || key == "GIT_CONFIG_COUNT" || strings.HasPrefix(key, "GIT_CONFIG_KEY_") || strings.HasPrefix(key, "GIT_CONFIG_VALUE_") {
-			continue
-		}
-		cmd.Env = append(cmd.Env, item)
-	}
+	cmd.Env = gitEnvironment()
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	if mutation {
 		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=1", "GIT_EDITOR=:", "GIT_SEQUENCE_EDITOR=:")
@@ -169,6 +164,20 @@ func (s *Service) Status(ctx context.Context, path string) (Status, error) {
 	}
 	if err := parseStatus(payload, &st); err != nil {
 		return st, err
+	}
+	if gitDir, err := s.run(ctx, st.Root, "rev-parse", "--absolute-git-dir"); err == nil {
+		for _, state := range []struct{ file, operation string }{
+			{"rebase-merge", "rebase"},
+			{"rebase-apply", "rebase"},
+			{"CHERRY_PICK_HEAD", "cherry-pick"},
+			{"REVERT_HEAD", "revert"},
+			{"MERGE_HEAD", "merge"},
+		} {
+			if _, err := os.Stat(filepath.Join(strings.TrimSuffix(string(gitDir), "\n"), state.file)); err == nil {
+				st.Operation = state.operation
+				break
+			}
+		}
 	}
 	if !st.Unborn {
 		commits, err := s.History(ctx, st.Root, Filter{Limit: 1})

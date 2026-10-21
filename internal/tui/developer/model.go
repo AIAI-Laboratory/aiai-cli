@@ -1,5 +1,5 @@
-// Package developer presents the local Git and workspace services without
-// owning subprocesses or starting nested terminal programs.
+// Package developer presents Git and workspace services, using asynchronous
+// queries and explicit terminal handoff for native Git operations.
 package developer
 
 import (
@@ -94,8 +94,8 @@ func NewModel(ctx context.Context, opts Options) Model {
 		input.SetStyles(textinput.Styles{})
 	}
 	gitInput := textinput.New()
-	gitInput.CharLimit = 500
-	gitInput.SetWidth(max(1, min(120, opts.Width-4)-2))
+	gitInput.CharLimit = 4096
+	gitInput.SetWidth(max(1, min(120, opts.Width-4)-3))
 	if opts.NoColor {
 		gitInput.SetStyles(textinput.Styles{})
 	}
@@ -281,7 +281,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.search.SetWidth(max(1, m.width-8))
-		m.gitInput.SetWidth(max(1, min(120, m.width-4)-2))
+		m.gitInput.SetWidth(max(1, min(120, m.width-4)-3))
+	case gitNativeReady:
+		return m.runGitCommand(msg)
 	case gitWriteDone:
 		if msg.id != m.writeID || !m.gitBusy {
 			return m, nil
@@ -568,7 +570,7 @@ func (m Model) View() tea.View {
 	case m.dialog.kind != "":
 		body, footer = m.gitDialogView(width)
 	case m.help:
-		body = "Local developer workspace\n\nGit: a actions · c commit · b branches\nChanges: Space stage/unstage · A stage all\nU unstage all · s staged diff · Tab preview\nBranches: ↑↓ select · Enter switch · n new\n←/→ pages · / search · r refresh\nWorkspace: Enter timeline · g Git · z focus\nEsc/q back · Ctrl+C cancel"
+		body = "Local developer workspace\n\nGit: a actions · c commit · b branches\np push · P pull · f fetch · : Git command\nChanges: Space stage/unstage · A/U all\nBranches: Enter switch · n new\nActions: / find · ↑↓ select · Enter open\nStash · merge/rebase · tags · remotes\nGit uses your terminal for auth/editors.\n←/→ pages · / search · r refresh\nEsc/q back · Ctrl+C cancel"
 	case m.loading:
 		body = "Loading local data…"
 		footer = "q back · ctrl+c cancel"
@@ -577,7 +579,7 @@ func (m Model) View() tea.View {
 		footer = "r retry · q back"
 	default:
 		if m.opts.Mode == "git" {
-			footer = "a actions · c commit · b branches · ←→ pages · ? help · q back"
+			footer = "a actions · p push · P pull · f fetch · c commit · ←→ pages · q back"
 			switch m.opts.Page {
 			case 0:
 				body = m.statusView(width, height)
@@ -600,7 +602,7 @@ func (m Model) View() tea.View {
 				body = m.scrollRows(m.rows, width, height)
 			}
 			if width < 80 {
-				footer = "a actions · ←→ pages · / search · q back"
+				footer = "a actions · p push · P pull · f fetch · q back"
 				if m.opts.Page == 1 {
 					footer = "space stage · c commit · a actions · q back"
 					if m.preview {
@@ -612,7 +614,7 @@ func (m Model) View() tea.View {
 				}
 			}
 			if width < 60 {
-				footer = "a actions · ←→ pages · q back"
+				footer = "a actions · p/P sync · q back"
 				if m.opts.Page == 1 {
 					footer = "space stage · a actions · q back"
 				}
