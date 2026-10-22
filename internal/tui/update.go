@@ -15,6 +15,14 @@ import (
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case shellFinishedMsg:
+		return m.shellFinished(msg)
+	case shellTickMsg:
+		if m.shellJob != msg.job {
+			return m, nil
+		}
+		m.shellResults[len(m.shellResults)-1].output = msg.job.snapshot()
+		return m, pollShell(msg.job)
 	case contextMsg:
 		m.projectContext = string(msg)
 	case cancelMsg:
@@ -217,6 +225,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = keyList
 		m.viewport.GotoTop()
 	case tea.KeyPressMsg:
+		key := msg.String()
+		if m.completion != nil && key != "tab" && key != "shift+tab" {
+			m.completion = nil
+			if key == "esc" {
+				return m, nil
+			}
+		}
+		if m.screen == home && len(m.shellResults) > 0 &&
+			(key == "f2" || key == "alt+left" || key == "alt+right" || m.shellHistory && key != "ctrl+c") {
+			return m.shellKey(msg)
+		}
+		if m.shellJob != nil {
+			switch msg.String() {
+			case "ctrl+c", "esc":
+				m.shellJob.cancel()
+			case "pgup", "pgdown", "up", "down", "ctrl+home", "ctrl+end":
+				return m.scrollShell(msg)
+			}
+			return m, nil
+		}
 		if msg.String() == "ctrl+c" {
 			return m.stop()
 		}
@@ -268,6 +296,9 @@ func scheduleAuthPoll(seconds int) tea.Cmd {
 }
 
 func (m Model) stop() (tea.Model, tea.Cmd) {
+	if m.shellJob != nil {
+		m.shellJob.cancel()
+	}
 	m.cancel()
 	m.canceling = true
 	if m.screen == applying || m.screen == planning || m.screen == loggingOut {
@@ -301,6 +332,7 @@ func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.command, cmd = m.command.Update(msg)
 	if before != m.command.Value() {
+		m.completion = nil
 		m.cursor = 0
 		m.viewport.GotoTop()
 	}

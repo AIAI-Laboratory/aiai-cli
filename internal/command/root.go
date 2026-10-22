@@ -196,6 +196,8 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
 	}
 	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
+	dir, _ := os.Getwd()
+	opts.Terminal = &platform.ShellSession{Dir: dir}
 	opts.Context = func(ctx context.Context) string {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()

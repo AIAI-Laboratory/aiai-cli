@@ -35,9 +35,40 @@ go build -trimpath -o bin/aiai ./cmd/aiai
 
 The home screen groups commands into Project, SSH, Account, and AIAI categories;
 **/help** and **/quit** remain directly accessible. Enter opens a category and
-Esc returns home. Typing searches every command immediately, Tab completes, and
-Enter selects. Arrows navigate the menu; `j/k` also work while the command field
-is empty.
+Esc returns home. Type `/` to browse categories or `/name` to find an AIAI
+command; Tab completes its name and Enter selects it. Arrows navigate menus.
+
+The Home prompt also runs terminal commands directly: `ls -la`, `cd "my project"`,
+`npm run build`, `git status`, or `aiai version --json`. Press Enter to stream
+stdout/stderr directly into AIAI, with the command, directory, status and duration
+pinned above its output. Each run has a separate result; **Alt+←/→** switches
+between runs and **F2** opens the run list (arrows to choose, Enter to view).
+PgUp/PgDown scrolls the selected output, Ctrl+C stops a running command, and
+Ctrl+L clears the results. Up to 20 runs / 256 KiB are retained in memory.
+Plain `ls`, `ls -a` and `ls -A` listings use responsive columns, with directories
+marked by `/`; other commands keep their original text layout. Use `/` to
+open AIAI menus. Pipes,
+redirection and quoted arguments use the shell's normal syntax. On macOS/Linux,
+the prompt uses the installed POSIX-compatible `$SHELL` (or fish), with `/bin/sh`
+as fallback; Windows uses PowerShell. ↑/↓ recalls commands; Ctrl+P/N works from
+any Home input. History is kept in memory for this AIAI session only.
+
+**Tab** completes command names from `PATH`, shell builtins, and file/directory
+paths in the current directory. It supports `~/`, environment-variable paths,
+quoted names, and completion at the cursor without replacing later arguments.
+For multiple matches, the first Tab fills the shared prefix and shows choices;
+further Tab / Shift+Tab cycles through them. Esc closes the choices. `cd`
+completion only offers directories. AIAI `/name` completion remains available.
+
+`cd` updates the directory for following commands and AIAI's Git/workspace views;
+`cd -` also works in POSIX shells. Each submitted line starts a shell process,
+so put environment changes and the command on the same line, such as
+`export MODE=dev; npm run build`. For commands needing input, credentials or a
+full terminal (such as `vim`, `ssh`, `npm init`, or an interactive `zsh`/`bash`/
+`pwsh` session), submit with **Alt+Enter**. This uses native terminal input/output
+and interactive shell startup files; inline commands have no stdin and use a
+non-interactive shell. In native mode, press Enter after the command finishes to
+return to AIAI. Use `/quit` to leave AIAI.
 
 The wizard selects a template, collects project fields, previews file operations,
 and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to

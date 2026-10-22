@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	gitlocal "github.com/AIAI-Laboratory/aiai-cli/internal/git"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 )
 
 type gitNativeReady struct {
@@ -33,6 +34,8 @@ func (p *gitTerminalProcess) SetStdin(in io.Reader)   { p.cmd.Stdin = in }
 func (p *gitTerminalProcess) SetStdout(out io.Writer) { p.cmd.Stdout = out }
 func (p *gitTerminalProcess) SetStderr(out io.Writer) { p.cmd.Stderr = out }
 func (p *gitTerminalProcess) Run() error {
+	platform.TerminalRunning.Store(true)
+	defer platform.TerminalRunning.Store(false)
 	_, _ = fmt.Fprintf(p.cmd.Stdout, "\ngit %s\n\n", gitlocal.FormatArguments(p.args))
 	err := p.cmd.Run()
 	if p.ctx.Err() == nil {

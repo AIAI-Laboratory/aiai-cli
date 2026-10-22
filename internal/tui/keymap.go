@@ -58,6 +58,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case home:
 			if m.command.Value() != "" {
 				m.command.SetValue("")
+				m.historyCursor, m.historyDraft = len(m.opts.Terminal.History), ""
 				m.cursor = 0
 				m.viewport.GotoTop()
 				return m, nil
@@ -65,6 +66,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.homeCategory != "" {
 				m.homeCategory = ""
 				m.cursor = 0
+				m.viewport.GotoTop()
+				return m, nil
+			}
+			if len(m.shellResults) > 0 {
+				m.command.SetValue("/")
 				m.viewport.GotoTop()
 				return m, nil
 			}
@@ -362,11 +368,47 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "tab" || key == "shift+tab" {
+		value := m.command.Value()
+		if shellInput(value) || value == "" && m.homeCategory == "" ||
+			strings.HasPrefix(value, "/") && len(screens.VisibleCommands(value, m.homeCategory)) == 0 {
+			return m.completeShell(key == "shift+tab")
+		}
+	}
+	if key == "ctrl+l" {
+		m.shellResults = nil
+		m.shellSelected, m.shellHistory = 0, false
+		m.viewport.GotoTop()
+		return m, nil
+	}
+	if m.showingShellOutput() {
+		switch key {
+		case "pgup", "pgdown", "ctrl+home", "ctrl+end":
+			return m.scrollShell(msg)
+		case "enter":
+			if m.command.Value() == "" {
+				return m, nil
+			}
+		}
+	}
+	if key == "ctrl+p" || key == "ctrl+n" || (key == "up" || key == "down") && m.homeCategory == "" && (shellInput(m.command.Value()) || m.command.Value() == "" && len(m.opts.Terminal.History) > 0) {
+		delta := -1
+		if key == "down" || key == "ctrl+n" {
+			delta = 1
+		}
+		return m.recallCommand(delta), nil
+	}
+	if shellInput(m.command.Value()) {
+		if key == "enter" || key == "alt+enter" {
+			return m.runShell(key == "alt+enter")
+		}
+		return m.updateCommand(msg)
+	}
 	matches := screens.VisibleCommands(m.command.Value(), m.homeCategory)
 	categories := screens.Categories()
 	rootCommands := screens.RootCommands()
-	browsingRoot := m.command.Value() == "" && m.homeCategory == ""
-	key := msg.String()
+	browsingRoot := (m.command.Value() == "" || m.command.Value() == "/") && m.homeCategory == ""
 	if key == "enter" {
 		fields := strings.Fields(m.command.Value())
 		if len(fields) == 2 && fields[0] == "/keygen" {
@@ -393,15 +435,6 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			})
 		}
 	}
-	// Keep j/k shortcuts until the user starts typing a command filter.
-	if m.command.Value() == "" {
-		if key == "j" {
-			key = "down"
-		}
-		if key == "k" {
-			key = "up"
-		}
-	}
 	switch key {
 	case "up", "down":
 		count := len(matches)
@@ -426,6 +459,7 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if browsingRoot {
 			if m.cursor < len(categories) {
+				m.command.SetValue("")
 				m.homeCategory = categories[m.cursor]
 				m.cursor = 0
 				m.viewport.GotoTop()

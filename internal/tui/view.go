@@ -19,7 +19,13 @@ func (m Model) View() tea.View {
 	m.resize()
 	content := m.content()
 	m.viewport.SetContent(content)
-	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
+	if m.showingShellOutput() && !m.shellHistory && m.shellFollow {
+		m.viewport.GotoBottom()
+	}
+	if m.showingShellOutput() && m.shellHistory {
+		m.viewport.EnsureVisible(m.shellSelected*3, 0, 2)
+	}
+	if m.screen == form || m.screen == home && !m.showingShellOutput() || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
@@ -42,8 +48,17 @@ func (m Model) content() string {
 	var body string
 	switch m.screen {
 	case home:
-		body = screens.Home(m.cursor, m.command.Value(), m.homeCategory, t)
-		if m.projectContext != "" {
+		if m.showingShellOutput() {
+			body = m.shellContent()
+		} else if shellInput(m.command.Value()) {
+			body = t.Heading("Terminal command", "Enter runs inline · Alt+Enter opens terminal") + t.Muted("Working directory: "+m.opts.Terminal.Dir)
+		} else {
+			body = screens.Home(m.cursor, m.command.Value(), m.homeCategory, t)
+		}
+		if m.shellNotice != "" {
+			body = t.Warn(m.shellNotice) + "\n\n" + body
+		}
+		if m.projectContext != "" && !m.showingShellOutput() {
 			body = t.Muted(t.Truncate(m.projectContext, t.Width())) + "\n\n" + body
 		}
 	case selection:
@@ -169,12 +184,27 @@ func (m Model) loading(title, subtitle string) string {
 
 func (m Model) chrome() (string, string) {
 	fit := lipgloss.NewStyle().Width(m.theme().Width())
-	return fit.Render(m.header() + "\n" + m.toolbar()), fit.Render("\n" + m.footer())
+	top, bottom := m.header()+"\n"+m.toolbar(), "\n"+m.footer()
+	if m.showingShellOutput() {
+		top, bottom = m.shellHeader(), m.theme().Rule()+"\n"+m.toolbar()+"\n"+m.footer()
+		if m.shellHistory {
+			bottom = m.theme().Rule() + "\n" + m.footer()
+		}
+	}
+	panel := m.completionView(m.height - lipgloss.Height(fit.Render(top)) - lipgloss.Height(fit.Render(bottom)) - 3)
+	if panel != "" {
+		if m.showingShellOutput() {
+			bottom = m.theme().Rule() + "\n" + m.toolbar() + "\n" + panel + "\n" + m.footer()
+		} else {
+			top += "\n" + panel
+		}
+	}
+	return fit.Render(top), fit.Render(bottom)
 }
 
 func (m Model) header() string {
 	t := m.theme()
-	if m.screen == home && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" {
+	if m.screen == home && !m.showingShellOutput() && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" {
 		return m.welcomeHeader()
 	}
 	return t.Title("AIAI CLI") + "\n" + t.Rule()
@@ -188,9 +218,9 @@ func (m Model) welcomeHeader() string {
 		title += "  " + t.Muted(version)
 	}
 
-	path, err := os.UserHomeDir()
+	path, err := os.Getwd()
 	if err != nil || path == "" {
-		path, _ = os.Getwd()
+		path = m.opts.Terminal.Dir
 	}
 	status := t.Good("●") + " " + t.Muted("Offline templates")
 	if m.authUser != nil && m.authUser.Login != "" {
@@ -249,6 +279,9 @@ func (m Model) logo() string {
 func (m Model) toolbar() string {
 	t := m.theme()
 	if m.screen == home {
+		if m.showingShellOutput() {
+			return t.Accent("❯ ") + m.command.View()
+		}
 		return t.Accent("> ") + m.command.View() + "\n" + t.Rule()
 	}
 	if m.screen == serverList || m.screen == keyList {
@@ -279,7 +312,15 @@ func (m Model) footer() string {
 	hint := "↑/↓ navigate · enter select · esc back"
 	switch m.screen {
 	case home:
-		if m.homeCategory == "" && m.command.Value() == "" {
+		if m.shellHistory {
+			hint = "↑/↓ select · enter view output · F2 back"
+		} else if m.shellJob != nil {
+			hint = "pgup/pgdown scroll · ctrl+c stop"
+		} else if m.showingShellOutput() {
+			hint = "tab complete · alt+←/→ runs · pgup/pgdown scroll"
+		} else if shellInput(m.command.Value()) || m.homeCategory == "" && m.command.Value() == "" && len(m.opts.Terminal.History) > 0 {
+			hint = "tab complete · ↑/↓ history · enter run"
+		} else if m.homeCategory == "" && m.command.Value() == "" {
 			hint = "↑/↓ choose · enter open"
 		} else {
 			hint = "↑/↓ choose · enter select · tab complete"
@@ -330,6 +371,15 @@ func (m Model) footer() string {
 		switch m.screen {
 		case home, selection:
 			hint = "↑/↓ choose · enter open · esc back"
+			if m.screen == home && m.showingShellOutput() {
+				hint = "alt+←/→ runs · F2 history"
+				if m.shellHistory {
+					hint = "↑/↓ select · enter view · F2 back"
+				}
+				if m.shellJob != nil {
+					hint = "pgup/pgdown scroll · ctrl+c stop"
+				}
+			}
 		case form:
 			hint = "tab next · enter continue · esc back"
 		case serverList, keyList:
@@ -347,6 +397,9 @@ func (m Model) footer() string {
 	status := " · ? help"
 	if m.screen == home {
 		status = " · esc quit"
+		if m.showingShellOutput() {
+			status = ""
+		}
 		if m.homeCategory != "" {
 			status = " · esc categories"
 		}

@@ -109,6 +109,9 @@ func VisibleCommands(query, category string) []int {
 }
 
 func Home(cursor int, query, category string, t Theme) string {
+	if strings.TrimSpace(query) == "/" {
+		query = ""
+	}
 	var s strings.Builder
 	if strings.TrimSpace(query) == "" && category == "" {
 		descriptions := map[string]string{
@@ -151,6 +154,18 @@ func Help(t Theme) string {
 		t.Section("Find") + "\n" +
 		"  /             Search the current list\n" +
 		"  Tab           Complete a command\n\n" +
+		t.Section("Terminal") + "\n" +
+		"  Type a command and Enter: ls, cd, npm, git…\n" +
+		"  Enter            Stream output inside AIAI\n" +
+		"  Tab / Shift+Tab  Complete command/path, cycle matches\n" +
+		"  Alt+Enter        Run with interactive terminal I/O\n" +
+		"  PgUp/PgDown      Scroll command output\n" +
+		"  Alt+←/→          View previous / next run\n" +
+		"  F2               Select a run from history\n" +
+		"  Ctrl+C           Stop a running command\n" +
+		"  Ctrl+L           Clear command output\n" +
+		"  ↑/↓ or Ctrl+P/N  Recall command history\n" +
+		"  /                Open AIAI menus\n\n" +
 		t.Section("Forms") + "\n" +
 		"  Tab / Shift+Tab  Next / previous field\n" +
 		"  Space            Toggle option\n\n" +

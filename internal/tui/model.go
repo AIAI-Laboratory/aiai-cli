@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
@@ -15,6 +16,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
@@ -75,6 +77,7 @@ type Options struct {
 	SSH       sshmanager.Manager
 	Clipboard func(string) error
 	Context   func(context.Context) string
+	Terminal  *platform.ShellSession
 }
 
 type Model struct {
@@ -130,6 +133,15 @@ type Model struct {
 	clipboard          func(string) error
 	action             Action
 	projectContext     string
+	shellNotice        string
+	historyCursor      int
+	historyDraft       string
+	shellJob           *shellJob
+	shellResults       []shellResult
+	shellSelected      int
+	shellHistory       bool
+	completion         *shellCompletion
+	shellFollow        bool
 }
 
 type (
@@ -198,21 +210,26 @@ type (
 )
 
 func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, opts Options) Model {
+	if opts.Terminal == nil {
+		dir, _ := os.Getwd()
+		opts.Terminal = &platform.ShellSession{Dir: dir}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	m := Model{
-		ctx:        ctx,
-		cancel:     cancel,
-		planner:    planner,
-		executor:   executor,
-		auth:       authenticator,
-		updater:    updaterService,
-		sshManager: opts.SSH,
-		clipboard:  opts.Clipboard,
-		templates:  metadata,
-		opts:       opts,
-		width:      80,
-		height:     30,
-		viewport:   viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
+		ctx:           ctx,
+		cancel:        cancel,
+		planner:       planner,
+		executor:      executor,
+		auth:          authenticator,
+		updater:       updaterService,
+		sshManager:    opts.SSH,
+		clipboard:     opts.Clipboard,
+		templates:     metadata,
+		opts:          opts,
+		width:         80,
+		height:        30,
+		viewport:      viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
+		historyCursor: len(opts.Terminal.History),
 	}
 	m.progress = spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	if !opts.NoColor {
@@ -223,8 +240,8 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	}
 	m.command = textinput.New()
 	m.command.Prompt = ""
-	m.command.Placeholder = "Search commands…"
-	m.command.CharLimit = 64
+	m.command.Placeholder = "Run a command… (/ for AIAI menus)"
+	m.command.CharLimit = 8192
 	m.styleInput(&m.command)
 	m.command.Focus()
 	m.search = textinput.New()
@@ -294,7 +311,11 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) theme() Theme {
-	return NewTheme(max(1, min(100, m.width-4)), m.opts.NoColor)
+	width := min(100, m.width-4)
+	if m.showingShellOutput() {
+		width = m.width - 4
+	}
+	return NewTheme(max(1, width), m.opts.NoColor)
 }
 
 func (m Model) busy() bool {
