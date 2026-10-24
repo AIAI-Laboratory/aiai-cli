@@ -59,7 +59,8 @@ func TestShellHistoryRestoresDraftAndSurvivesHomeReopen(t *testing.T) {
 	defer m.shellJob.cancel()
 	reopened := NewModel(context.Background(), fakePlanner{}, fakeExecutor{new(int)}, nil, nil, nil, opts)
 	defer reopened.cancel()
-	reopened, _ = press(reopened, tea.KeyUp)
+	next, _ := reopened.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	reopened = next.(Model)
 	if reopened.command.Value() != "npm run build" {
 		t.Fatal("returning from another AIAI screen lost history")
 	}

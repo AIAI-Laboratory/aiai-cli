@@ -4,17 +4,38 @@ package style
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 const (
-	Accent = "#FF3B30"
-	Muted  = "#767676"
-	Good   = "#208457"
-	Info   = "#3579b3"
-	Warn   = "#986d13"
+	Accent       = "#FF3B30"
+	Muted        = "#767676"
+	Good         = "#208457"
+	Info         = "#3579b3"
+	Warn         = "#986d13"
+	SearchPrefix = "> Search: "
 )
+
+// ResizeInput keeps the cursor visible when the terminal or field width changes.
+func ResizeInput(input *textinput.Model, width int) {
+	width = max(1, width)
+	if input.Width() == width {
+		return
+	}
+	pos := input.Position()
+	input.SetWidth(width)
+	input.CursorEnd()
+	input.SetCursor(pos)
+}
+
+func Search(input textinput.Model, width int, noColor bool) string {
+	input.Prompt = ""
+	ResizeInput(&input, width-len(SearchPrefix)-1)
+	return Paint("> ", Accent, true, noColor) + Paint("Search: ", "", true, noColor) +
+		ansi.Truncate(input.View(), max(1, width-len(SearchPrefix)), "…")
+}
 
 func Paint(text, color string, bold, noColor bool) string {
 	if noColor {

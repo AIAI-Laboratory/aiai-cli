@@ -82,7 +82,7 @@ func (m Model) View() tea.View {
 			body += "\n" + m.muted(strings.Join(m.snapshot.Warnings, " · "))
 		}
 		if m.searching || m.search.Value() != "" {
-			body += "\n" + m.search.View()
+			body += "\n" + style.Search(m.search, w, m.noColor)
 		}
 		available := height - lipgloss.Height(header) - lipgloss.Height(body) - 6 - 2*(strings.Count(separator, "\n")-1)
 		body += separator + m.processView(w, max(1, available))

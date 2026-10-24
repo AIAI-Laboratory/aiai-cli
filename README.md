@@ -51,8 +51,11 @@ marked by `/`; other commands keep their original text layout. Use `/` to
 open AIAI menus. Pipes,
 redirection and quoted arguments use the shell's normal syntax. On macOS/Linux,
 the prompt uses the installed POSIX-compatible `$SHELL` (or fish), with `/bin/sh`
-as fallback; Windows uses PowerShell. ↑/↓ recalls commands; Ctrl+P/N works from
-any Home input. History is kept in memory for this AIAI session only.
+as fallback; Windows uses PowerShell. ↑/↓ recalls commands while viewing terminal
+output or editing a shell command, and navigates menus while they are visible.
+Ctrl+P/N recalls history from any Home input. History is kept in memory for this
+AIAI session only. When browsing old results, the active project and directory
+remain visible above them; each result labels its original directory as **Ran in**.
 
 **Tab** completes command names from `PATH`, shell builtins, and file/directory
 paths in the current directory. It supports `~/`, environment-variable paths,
@@ -120,6 +123,8 @@ absolute, relative and `~/` paths are supported, including spaces. The switch
 updates the working directory and Git context while preserving the command draft,
 history and results (**F2**). Stop a running command before switching. If a drive
 is disconnected or a directory is missing, the current project stays active.
+Search fields use the same **Search:** label across projects, SSH, Workspace and
+Monitor. Esc clears a project search first; press Esc again to return Home.
 
 The Project category in Home exposes `/switch`, `/workspace` and `/git`. The project appears
 on its own line, followed by a Git branch symbol, branch name and change count.

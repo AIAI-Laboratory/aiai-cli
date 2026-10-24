@@ -66,16 +66,34 @@ func shellRow(left, right string, t Theme) string {
 func (m Model) shellHeader() string {
 	t := m.theme()
 	count := len(m.shellResults)
+	project := m.projectContext.Project
+	if project == "" {
+		project = filepath.Base(m.opts.Terminal.Dir)
+	}
+	dir := projectLabel(shellPath(m.opts.Terminal.Dir))
+	dirWidth := max(1, t.Width()-len("Dir: "))
+	if ansi.StringWidth(dir) > dirWidth {
+		dir = ansi.TruncateLeft(dir, ansi.StringWidth(dir)-dirWidth+1, "…")
+	}
+	projectLine := t.Truncate(t.Title("Current: "+projectLabel(project)), t.Width())
+	if !m.shellHistory {
+		historyKey := "F2 history"
+		if t.Width() < 48 {
+			historyKey = "F2"
+		}
+		projectLine = shellRow(projectLine, t.Muted(historyKey), t)
+	}
+	current := projectLine + "\n" + t.Muted("Dir: "+dir)
 	if m.shellHistory {
-		return shellRow(t.Title("Command history"), t.Muted("F2 / Esc back"), t) + "\n" + t.Rule()
+		return current + "\n" + shellRow(t.Title("Command history"), t.Muted("F2 / Esc back"), t) + "\n" + t.Rule()
 	}
 	r := m.shellResults[m.shellSelected]
 	running := m.shellJob != nil && m.shellSelected == count-1
 	command := strings.Join(strings.Fields(r.line), " ")
-	return shellRow(t.Title("AIAI CLI")+t.Muted("  /  Terminal"), t.Muted("F2 history"), t) + "\n" +
+	return current + "\n" +
 		t.Rule() + "\n" +
 		shellRow(t.Accent("❯ ")+t.Title(command), r.status(t, running), t) + "\n" +
-		shellRow(t.Muted(shellPath(r.dir)), t.Muted(fmt.Sprintf("Run %d / %d", m.shellSelected+1, count)), t) + "\n" + t.Rule()
+		shellRow(t.Muted("Ran in: "+shellPath(r.dir)), t.Muted(fmt.Sprintf("Run %d / %d", m.shellSelected+1, count)), t) + "\n" + t.Rule()
 }
 
 func (m Model) shellContent() string {
@@ -89,7 +107,7 @@ func (m Model) shellContent() string {
 				prefix, command = "> ", t.Accent(command)
 			}
 			rows = append(rows, shellRow(fmt.Sprintf("%s%02d  %s", prefix, i+1, command), r.status(t, m.shellJob != nil && i == len(m.shellResults)-1), t),
-				t.Muted(t.Truncate("  "+shellPath(r.dir), t.Width())), "")
+				t.Muted(t.Truncate("  Ran in: "+shellPath(r.dir), t.Width())), "")
 		}
 		return strings.Join(rows, "\n")
 	}

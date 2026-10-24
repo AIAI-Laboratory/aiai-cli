@@ -33,7 +33,9 @@ func (m Model) View() tea.View {
 			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
 				if m.screen == form && m.focus < 3 || m.screen == projectPicker || m.screen == projectAdd {
-					m.viewport.EnsureVisible(line+1, 0, 1)
+					if m.viewport.Height() > 1 && line+1 >= m.viewport.YOffset()+m.viewport.Height() {
+						m.viewport.SetYOffset(line + 2 - m.viewport.Height())
+					}
 				}
 				break
 			}
@@ -79,9 +81,6 @@ func (m Model) content() string {
 			values[i] = m.inputs[i].View()
 		}
 		body = screens.InitForm(values, m.focus, m.opts.Request.Force, m.opts.DryRun, t)
-		if m.formError != "" {
-			body = t.Accent("! "+m.formError) + "\n\n" + body
-		}
 	case planning:
 		body = m.loading("Building preview…")
 	case preview:
@@ -321,10 +320,10 @@ func (m Model) toolbar() string {
 	if m.screen == projectPicker || m.screen == projectAdd {
 		var rows []string
 		if m.screen == projectPicker {
-			rows = append(rows, t.Accent("> ")+t.Title("Search: ")+m.projects.input.View(), t.Rule())
+			rows = append(rows, style.Search(m.projects.input, t.Width(), t.NoColor()), t.Rule())
 		}
 		if m.projects.notice != "" {
-			rows = append(rows, t.Warn(t.Truncate(strings.Join(strings.Fields(ansi.Strip(m.projects.notice)), " "), t.Width())))
+			rows = append(rows, m.noticeView(m.projects.notice))
 		}
 		return strings.Join(rows, "\n")
 	}
@@ -338,7 +337,7 @@ func (m Model) toolbar() string {
 		if !m.searching && m.search.Value() == "" {
 			return ""
 		}
-		return m.search.View() + "\n" + t.Rule()
+		return style.Search(m.search, t.Width(), t.NoColor()) + "\n" + t.Rule()
 	}
 	step := -1
 	switch m.screen {
@@ -352,9 +351,24 @@ func (m Model) toolbar() string {
 		step = 3
 	}
 	if step >= 0 {
+		if m.screen == form && m.formError != "" {
+			return t.Step(step) + "\n" + m.noticeView(m.formError)
+		}
 		return t.Step(step) + "\n"
 	}
 	return ""
+}
+
+func (m Model) noticeView(message string) string {
+	t := m.theme()
+	message = strings.Join(strings.Fields(ansi.Strip(message)), " ")
+	lines := strings.Split(ansi.Wrap(message, t.Width(), " "), "\n")
+	limit := min(3, max(1, m.height/6))
+	if len(lines) > limit {
+		lines = lines[:limit]
+		lines[limit-1] = t.Truncate(lines[limit-1]+"…", t.Width())
+	}
+	return t.Warn(strings.Join(lines, "\n"))
 }
 
 func (m Model) footer() string {
@@ -375,7 +389,7 @@ func (m Model) footer() string {
 			hint = "pgup/pgdown scroll · ctrl+c stop"
 		} else if m.showingShellOutput() {
 			hint = "tab complete · alt+←/→ runs · pgup/pgdown scroll"
-		} else if shellInput(m.command.Value()) || m.homeCategory == "" && m.command.Value() == "" && len(m.opts.Terminal.History) > 0 {
+		} else if shellInput(m.command.Value()) {
 			hint = "tab complete · ↑/↓ history · enter run"
 		} else if m.homeCategory == "" && m.command.Value() == "" {
 			hint = "↑/↓ choose · enter open · ctrl+k projects"
@@ -444,6 +458,17 @@ func (m Model) footer() string {
 			}
 		case home, selection:
 			hint = "↑/↓ choose · enter open · esc back"
+			if m.screen == home {
+				hint = "↑↓ · enter · esc quit"
+				if m.command.Value() != "" {
+					hint = "↑↓ · enter · esc clear"
+				} else if m.homeCategory != "" {
+					hint = "↑↓ · enter · esc back"
+				}
+				if shellInput(m.command.Value()) && !m.showingShellOutput() {
+					hint = "↑↓ history · enter run"
+				}
+			}
 			if m.screen == home && m.showingShellOutput() {
 				hint = "alt+←/→ runs · F2 history"
 				if m.shellHistory {
@@ -473,10 +498,11 @@ func (m Model) footer() string {
 	}
 	if m.screen == home {
 		status = " · esc quit"
-		if m.showingShellOutput() {
+		if m.command.Value() != "" {
+			status = " · esc clear"
+		} else if m.showingShellOutput() {
 			status = ""
-		}
-		if m.homeCategory != "" {
+		} else if m.homeCategory != "" {
 			status = " · esc categories"
 		}
 	}

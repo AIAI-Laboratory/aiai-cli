@@ -340,7 +340,8 @@ func (m Model) prepare() (tea.Model, tea.Cmd) {
 		name, err := project.NormalizeName(req.ProjectName)
 		if err != nil {
 			m.formError = err.Error()
-			return m, nil
+			m.viewport.GotoTop()
+			return m, m.setFocus(0)
 		}
 		req.TargetDir = filepath.Join(".", name)
 	}

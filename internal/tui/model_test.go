@@ -274,7 +274,7 @@ func TestServerSearchAndBackNavigation(t *testing.T) {
 	if !m.searching {
 		t.Fatal("/ did not focus server search")
 	}
-	if toolbar := m.toolbar(); !strings.HasPrefix(toolbar, "/ ") || strings.Contains(toolbar, "Filter") {
+	if toolbar := m.toolbar(); !strings.HasPrefix(toolbar, "> Search: ") || strings.Contains(toolbar, "Filter") {
 		t.Fatalf("search field is missing: %q", toolbar)
 	}
 	m = typeCommand(m, "production")

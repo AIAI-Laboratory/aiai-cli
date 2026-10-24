@@ -93,9 +93,10 @@ func NewModel(ctx context.Context, opts Options) Model {
 		opts.Height = 24
 	}
 	input := textinput.New()
-	input.Placeholder = "Search projects or files…"
+	input.Prompt = ""
+	input.Placeholder = "Project or file name…"
 	input.CharLimit = max(100, len([]rune(opts.File)))
-	input.SetWidth(max(1, opts.Width-8))
+	style.ResizeInput(&input, min(120, opts.Width-4)-len(style.SearchPrefix)-1)
 	input.SetValue(opts.File)
 	if opts.NoColor {
 		input.SetStyles(textinput.Styles{})
@@ -287,8 +288,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.search.SetWidth(max(1, m.width-8))
-		m.gitInput.SetWidth(max(1, min(120, m.width-4)-3))
+		style.ResizeInput(&m.search, min(120, m.width-4)-len(style.SearchPrefix)-1)
+		style.ResizeInput(&m.gitInput, min(120, m.width-4)-3)
 	case gitNativeReady:
 		return m.runGitCommand(msg)
 	case gitWriteDone:
@@ -585,7 +586,7 @@ func (m Model) View() tea.View {
 		header += m.muted("  "+oneLine(m.status.Name)) + "\n" + m.gitTabs(width)
 	}
 	if m.searching || m.search.Value() != "" {
-		header += "\n" + m.search.View()
+		header += "\n" + style.Search(m.search, width, m.opts.NoColor)
 	}
 	if m.notice != "" {
 		header += "\n" + ansi.Truncate(oneLine(m.notice), width, "…")

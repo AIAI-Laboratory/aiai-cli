@@ -280,8 +280,8 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	m.styleInput(&m.command)
 	m.command.Focus()
 	m.search = textinput.New()
-	m.search.Prompt = "/ "
-	m.search.Placeholder = "Search name, host, user, or fingerprint…"
+	m.search.Prompt = ""
+	m.search.Placeholder = "Name, host, user or fingerprint…"
 	m.search.CharLimit = 128
 	m.styleInput(&m.search)
 	for i, value := range []string{opts.Request.ProjectName, opts.Request.TargetDir, opts.Request.PackageName} {
@@ -389,15 +389,16 @@ func (m Model) styleInput(input *textinput.Model) {
 
 func (m *Model) resize() {
 	width := m.theme().Width()
-	m.command.SetWidth(max(1, width-6))
-	m.search.SetWidth(max(1, width-6))
-	m.projects.input.SetWidth(max(1, width-4))
+	style.ResizeInput(&m.command, width-6)
+	style.ResizeInput(&m.search, width-len(style.SearchPrefix)-1)
+	projectWidth := width - 4
 	if m.screen == projectPicker {
-		m.projects.input.SetWidth(max(1, width-len("> Search: ")-1))
+		projectWidth = width - len(style.SearchPrefix) - 1
 	}
-	m.projects.name.SetWidth(max(1, width-4))
+	style.ResizeInput(&m.projects.input, projectWidth)
+	style.ResizeInput(&m.projects.name, width-4)
 	for i := range m.inputs {
-		m.inputs[i].SetWidth(max(1, width-4))
+		style.ResizeInput(&m.inputs[i], width-4)
 	}
 	m.viewport.SetWidth(width)
 	top, bottom := m.chrome()

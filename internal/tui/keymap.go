@@ -69,7 +69,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoTop()
 				return m, nil
 			}
-			if len(m.shellResults) > 0 {
+			if m.showingShellOutput() {
 				m.command.SetValue("/")
 				m.viewport.GotoTop()
 				return m, nil
@@ -399,7 +399,7 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	if key == "ctrl+p" || key == "ctrl+n" || (key == "up" || key == "down") && m.homeCategory == "" && (shellInput(m.command.Value()) || m.command.Value() == "" && len(m.opts.Terminal.History) > 0) {
+	if key == "ctrl+p" || key == "ctrl+n" || (key == "up" || key == "down") && m.homeCategory == "" && (shellInput(m.command.Value()) || m.command.Value() == "" && m.showingShellOutput()) {
 		delta := -1
 		if key == "down" || key == "ctrl+n" {
 			delta = 1

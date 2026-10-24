@@ -88,6 +88,9 @@ func TestSearchShortcutsAndNavigation(t *testing.T) {
 	if m.search.Value() != "cmq?" || m.order != "cpu" || m.help || m.ctx.Err() != nil {
 		t.Fatal("search interpreted a shortcut")
 	}
+	if !strings.Contains(ansi.Strip(m.View().Content), "> Search: cmq?") {
+		t.Fatal("monitor search lost its persistent label")
+	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = next.(Model)
 	if m.searching || m.search.Value() != "" {

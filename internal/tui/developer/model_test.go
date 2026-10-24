@@ -50,6 +50,9 @@ func TestSearchDoesNotExecuteShortcuts(t *testing.T) {
 	if m.action.Focus != nil || m.search.Value() != "z" || len(m.visible()) != 1 {
 		t.Fatalf("shortcut intercepted search %+v", m)
 	}
+	if !strings.Contains(m.View().Content, "Search: ") {
+		t.Fatal("workspace search lost its persistent label")
+	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if m.searching {

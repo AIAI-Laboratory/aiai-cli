@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	metrics "github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 )
 
 type (
@@ -61,9 +62,13 @@ func NewModel(ctx context.Context, collector metrics.Collector, opts Options) Mo
 		opts.Height = 24
 	}
 	search := textinput.New()
-	search.Prompt = "/ "
+	search.Prompt = ""
 	search.Placeholder = "Process name or PID…"
 	search.CharLimit = 80
+	if opts.NoColor {
+		search.SetStyles(textinput.Styles{})
+	}
+	style.ResizeInput(&search, min(128, opts.Width-4)-len(style.SearchPrefix)-1)
 	return Model{ctx: ctx, cancel: cancel, collector: collector, interval: opts.Interval, noColor: opts.NoColor, width: opts.Width, height: opts.Height, order: "cpu", panel: 4, search: search, downloadHistory: map[string][]float64{}, uploadHistory: map[string][]float64{}}
 }
 
@@ -95,7 +100,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.search.SetWidth(max(1, m.width-6))
+		style.ResizeInput(&m.search, min(128, m.width-4)-len(style.SearchPrefix)-1)
 	case refreshMsg:
 		if msg.generation != m.generation || m.paused || m.loading || m.ctx.Err() != nil {
 			return m, nil

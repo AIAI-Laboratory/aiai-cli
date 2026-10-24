@@ -80,6 +80,10 @@ func TestProjectSwitcherSearchRecencyAndCancelPreservesDraft(t *testing.T) {
 		}
 	}
 	m, _ = press(m, tea.KeyEscape)
+	if m.screen != projectPicker || m.projects.input.Value() != "" {
+		t.Fatal("Esc should clear the project search before leaving")
+	}
+	m, _ = press(m, tea.KeyEscape)
 	if m.screen != home || m.command.Value() != "npm run build" || m.command.Position() != 4 || m.homeCategory != "SSH" || m.cursor != 2 {
 		t.Fatal("cancel lost the Home draft or menu selection")
 	}

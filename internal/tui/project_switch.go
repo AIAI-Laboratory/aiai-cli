@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,6 +72,7 @@ func (m Model) openProjectSwitcher() (tea.Model, tea.Cmd) {
 	m.styleInput(&name)
 	m.projects = projectSwitchState{input: input, name: name, request: request, returnY: m.viewport.YOffset(), busy: true}
 	m.screen = projectPicker
+	m.resize()
 	m.completion = nil
 	m.command.Blur()
 	m.viewport.GotoTop()
@@ -92,7 +94,7 @@ func (m Model) projectsLoaded(msg projectsLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.projects.busy = false
 	if msg.err != nil {
-		m.projects.notice = "Cannot load projects: " + msg.err.Error()
+		m.projects.notice = "Cannot load projects: " + projectError(msg.err)
 		return m, nil
 	}
 	sort.SliceStable(msg.items, func(i, j int) bool {
@@ -167,11 +169,18 @@ func (m Model) switchProject(p workspace.Project) (tea.Model, tea.Cmd) {
 
 func (m Model) projectSwitchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.screen == projectPicker && key == "esc" {
+		if m.projects.input.Value() != "" {
+			m.projects.input.SetValue("")
+			m.projects.cursor = 0
+			m.projects.notice = ""
+			m.viewport.GotoTop()
+			return m, nil
+		}
+		return m.closeProjectSwitcher()
+	}
 	if m.projects.busy {
 		if m.screen == projectPicker {
-			if key == "esc" {
-				return m.closeProjectSwitcher()
-			}
 			if key != "enter" && key != "up" && key != "down" {
 				return m.updateProjectInput(msg)
 			}
@@ -182,6 +191,7 @@ func (m Model) projectSwitchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "esc":
 			m.screen = projectPicker
+			m.resize()
 			m.projects.input.SetValue(m.projects.query)
 			m.projects.input.Placeholder = "Name, path or tag…"
 			m.projects.name.Blur()
@@ -207,8 +217,6 @@ func (m Model) projectSwitchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	items := m.matchingProjects()
 	switch key {
-	case "esc":
-		return m.closeProjectSwitcher()
 	case "ctrl+r":
 		m.projects.request++
 		m.projects.busy = true
@@ -231,6 +239,7 @@ func (m Model) projectSwitchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.projects.input.Placeholder = "~/work/project or /Volumes/SSD/project"
 		m.projects.name.SetValue("")
 		m.projects.focus, m.projects.notice = 0, ""
+		m.resize()
 		m.viewport.GotoTop()
 		if m.projects.cursor > len(items) {
 			m.projects.input.SetValue(m.opts.Terminal.Dir)
@@ -302,7 +311,13 @@ func (m Model) projectAdded(msg projectAddedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.projects.busy = false
 	if msg.err != nil {
-		m.projects.notice = strings.ReplaceAll(msg.err.Error(), "choose --name", "choose another name")
+		m.projects.notice = "Cannot add project: " + projectError(msg.err)
+		var pathError *os.PathError
+		if errors.As(msg.err, &pathError) {
+			m.projects.focus = 0
+			m.projects.name.Blur()
+			return m, m.projects.input.Focus()
+		}
 		if m.projects.focus == 1 {
 			return m, m.projects.name.Focus()
 		}
@@ -315,6 +330,17 @@ func (m Model) projectAdded(msg projectAddedMsg) (tea.Model, tea.Cmd) {
 	m.projects.cursor = len(m.projects.items) - 1
 	m.projects.name.Blur()
 	return m.switchProject(msg.project)
+}
+
+func projectError(err error) string {
+	var pathError *os.PathError
+	if errors.As(err, &pathError) {
+		return pathError.Err.Error() + ": " + pathError.Path
+	}
+	if strings.Contains(err.Error(), "already exists; choose --name") {
+		return "Project name already exists; choose another name."
+	}
+	return strings.ReplaceAll(err.Error(), "choose --name", "choose another name")
 }
 
 func (m Model) projectSwitchView() string {
