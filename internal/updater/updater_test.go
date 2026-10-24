@@ -276,4 +276,20 @@ func TestDefaultServiceCheck(t *testing.T) {
 	if !res3.HasUpdate {
 		t.Errorf("expected HasUpdate=true with force=true")
 	}
+	for _, current := range []string{"v0.2.0", "v0.3.0"} {
+		res, err := service.CheckForUpdate(context.Background(), current, true)
+		if err != nil || res.HasUpdate {
+			t.Fatalf("forced check offered reinstall/downgrade from %s: %+v %v", current, res, err)
+		}
+	}
+	if res2.Notice == "" {
+		t.Fatal("skipped check did not explain why no update was offered")
+	}
+	if err := service.Postpone(*res.LatestRelease, false); err != nil {
+		t.Fatal(err)
+	}
+	res4, err := service.CheckForUpdate(context.Background(), "v0.1.0", false)
+	if err != nil || res4.HasUpdate || res4.Notice == "" {
+		t.Fatalf("reminder was ignored or unexplained: %+v %v", res4, err)
+	}
 }

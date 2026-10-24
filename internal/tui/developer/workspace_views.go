@@ -52,7 +52,7 @@ func (m Model) timelineRows(width int) []string {
 	if o == nil {
 		return []string{"Project unavailable"}
 	}
-	rows := []string{m.title(oneLine(o.Project.Name)), m.muted(pathTail(o.Project.Root, width)), "", m.title("Development timeline"), m.muted("Commits and focus sessions are separate facts"), ""}
+	rows := []string{m.title(oneLine(o.Project.Name)), m.muted(pathTail(o.Project.Root, width)), "", m.title("Timeline · Git / Focus"), ""}
 	if m.timeline == nil {
 		return rows
 	}

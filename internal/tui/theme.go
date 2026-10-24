@@ -56,7 +56,7 @@ func (t Theme) Keys(hint string) string {
 func (t Theme) Choice(label, description string, selected bool) string {
 	labelWidth := max(1, t.width-2)
 	descriptionWidth := max(1, t.width-4)
-	if t.width >= 62 {
+	if t.width >= 62 && description != "" {
 		labelWidth = 16
 		descriptionWidth = max(1, t.width-20)
 	}

@@ -43,16 +43,12 @@ func (s *DefaultService) CheckForUpdate(ctx context.Context, currentVersion stri
 	}
 
 	if !force {
-		// In dev mode, skip automatic check unless explicitly forced via env
-		if currentVersion == "dev" && os.Getenv("AIAI_FORCE_UPDATE_CHECK") != "1" {
-			return res, nil
-		}
-
 		if s.Store != nil {
 			state, err := s.Store.Load()
 			if err == nil {
 				// If reminded later and the time hasn't passed, skip checking
 				if !state.RemindAfter.IsZero() && now.Before(state.RemindAfter) {
+					res.Notice = "Update checks postponed until " + state.RemindAfter.Local().Format("2006-01-02 15:04") + ". Use aiai update --force to check now."
 					return res, nil
 				}
 			}
@@ -75,15 +71,12 @@ func (s *DefaultService) CheckForUpdate(ctx context.Context, currentVersion stri
 
 		if !force && state.SkippedVersion != "" && state.SkippedVersion == release.Version {
 			res.HasUpdate = false
+			res.Notice = "Version " + release.TagName + " was skipped. Use aiai update --force to install it."
 			return res, nil
 		}
 	}
 
-	if force {
-		res.HasUpdate = true
-	} else {
-		res.HasUpdate = IsNewerVersion(currentVersion, release.TagName)
-	}
+	res.HasUpdate = IsNewerVersion(currentVersion, release.TagName)
 
 	return res, nil
 }

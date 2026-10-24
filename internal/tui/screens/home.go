@@ -34,6 +34,7 @@ type Command struct {
 var HomeItems = []Command{
 	{"/init", "Initialize a Python project", "Project"},
 	{"/workspace", "Your projects and development timeline", "Project"},
+	{"/switch", "Switch project · Ctrl+K", "Project"},
 	{"/git", "Git commit, pull, push and branches", "Project"},
 	{"/servers", "Browse local SSH server profiles", "SSH"},
 	{"/ssh", "Connect to a configured SSH server", "SSH"},
@@ -44,7 +45,7 @@ var HomeItems = []Command{
 	{"/whoami", "Show the signed-in account", "Account"},
 	{"/logout", "Remove the current session", "Account"},
 	{"/update", "Check for updates and upgrade AIAI", "AIAI"},
-	{"/zen", "A little peace inside your terminal", "AIAI"},
+	{"/zen", "Focus timer and aquarium", "AIAI"},
 	{"/monitor", "Live CPU, memory, disks, network, and processes", "AIAI"},
 	{"/about", "About AIAI CLI", "AIAI"},
 	{"/help", "Explore keyboard shortcuts", ""},
@@ -135,9 +136,6 @@ func Home(cursor int, query, category string, t Theme) string {
 		return t.Heading("No matching commands", "Nothing matches "+strconv.Quote(strings.TrimSpace(query))+".") +
 			"Try a shorter command name, or press " + t.Accent("Esc") + " to clear the filter."
 	}
-	if category != "" && strings.TrimSpace(query) == "" {
-		s.WriteString(t.Muted("Esc returns to workspace") + "\n\n")
-	}
 	for row, index := range matches {
 		item := HomeItems[index]
 		s.WriteString(t.Choice(item.Name, item.Description, row == cursor))
@@ -146,7 +144,7 @@ func Home(cursor int, query, category string, t Theme) string {
 }
 
 func Help(t Theme) string {
-	return t.Heading("Help & shortcuts", "Keyboard-first, predictable everywhere.") +
+	return t.Heading("Help & shortcuts", "") +
 		t.Section("Navigate") + "\n" +
 		"  ↑/↓  j/k      Move selection\n" +
 		"  Enter         Open or confirm\n" +
@@ -154,6 +152,7 @@ func Help(t Theme) string {
 		t.Section("Find") + "\n" +
 		"  /             Search the current list\n" +
 		"  Tab           Complete a command\n\n" +
+		"  Ctrl+K        Switch project\n\n" +
 		t.Section("Terminal") + "\n" +
 		"  Type a command and Enter: ls, cd, npm, git…\n" +
 		"  Enter            Stream output inside AIAI\n" +

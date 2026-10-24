@@ -29,4 +29,5 @@ type CheckResult struct {
 	CurrentVersion string    `json:"current_version"`
 	LatestRelease  *Release  `json:"latest_release,omitempty"`
 	CheckedAt      time.Time `json:"checked_at"`
+	Notice         string    `json:"notice,omitempty"`
 }

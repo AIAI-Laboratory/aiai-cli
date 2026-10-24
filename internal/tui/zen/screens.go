@@ -37,16 +37,15 @@ func historyView(sessions []zenmodel.Session, width int, noColor bool) string {
 	var out strings.Builder
 	out.WriteString(bold("Session history") + "\n\n")
 	if len(sessions) == 0 {
-		return out.String() + muted("No focus sessions yet. Start gently; the fish will wait.", noColor)
+		return out.String() + muted("No focus sessions yet.", noColor)
 	}
-	limit := min(14, len(sessions))
 	if width >= 68 {
 		out.WriteString(muted("DATE        START  TYPE          PLANNED  ACTUAL   STATUS", noColor) + "\n" + muted(strings.Repeat("─", width), noColor) + "\n")
-		for _, item := range sessions[:limit] {
+		for _, item := range sessions {
 			fmt.Fprintf(&out, "%-11s %-6s %-13s %-8s %-8s %s\n", item.StartedAt.Local().Format("2006-01-02"), item.StartedAt.Local().Format("15:04"), sessionLabel(item.Type), duration(item.PlannedSeconds), duration(item.ActiveSeconds), sessionStatus(item.Status, noColor))
 		}
 	} else {
-		for _, item := range sessions[:limit] {
+		for _, item := range sessions {
 			fmt.Fprintf(&out, "%s  %s\n  %s active · %s\n\n", bold(sessionLabel(item.Type)), muted(item.StartedAt.Local().Format("02 Jan 15:04"), noColor), duration(item.ActiveSeconds), sessionStatus(item.Status, noColor))
 		}
 	}

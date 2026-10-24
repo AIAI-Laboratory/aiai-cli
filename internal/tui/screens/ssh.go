@@ -12,12 +12,12 @@ import (
 )
 
 func ServerList(servers []sshmanager.Server, cursor int, connect bool, filter string, t Theme) string {
-	title, subtitle := "SSH servers", ""
+	title := "SSH servers"
 	if connect {
-		title, subtitle = "Connect with SSH", "Choose a server"
+		title = "Connect with SSH"
 	}
 	var body strings.Builder
-	body.WriteString(t.Heading(title, subtitle))
+	body.WriteString(t.Heading(title, ""))
 	if len(servers) == 0 {
 		if filter != "" {
 			body.WriteString(t.Muted("No servers match " + strconv.Quote(filter) + ".\n\n"))
@@ -36,7 +36,7 @@ func ServerList(servers []sshmanager.Server, cursor int, connect bool, filter st
 }
 
 func ServerDetail(server sshmanager.Server, t Theme) string {
-	return t.Heading(server.Alias, serverDestination(server)) + serverDetailBody(server, t, t.Width())
+	return t.Heading(server.Alias, "") + serverDetailBody(server, t, t.Width())
 }
 
 func serverDestination(server sshmanager.Server) string {
@@ -153,7 +153,7 @@ func SSHFailure(err error, t Theme) string {
 	if err != nil {
 		message = err.Error()
 	}
-	return t.Heading("SSH", "Local server management") + t.Warn(message)
+	return t.Heading("SSH", "") + t.Warn(message)
 }
 
 func KeyList(keys []sshmanager.Key, query, filter, notice string, cursor int, t Theme) string {

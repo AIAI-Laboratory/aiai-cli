@@ -7,7 +7,7 @@ import (
 )
 
 func DeviceLogin(device auth.DeviceAuthorization, t Theme) string {
-	body := t.Heading("Sign in with GitHub", "Complete authorization in your browser.") +
+	body := t.Heading("Sign in with GitHub", "") +
 		"Open: " + t.Truncate(device.VerificationURI, max(1, t.Width()-7)) + "\n\n" +
 		t.Title(device.UserCode)
 	if device.BrowserOpenWarning != "" {
@@ -18,7 +18,7 @@ func DeviceLogin(device auth.DeviceAuthorization, t Theme) string {
 
 func AuthProfile(user auth.User, storage string, t Theme) string {
 	var body strings.Builder
-	body.WriteString(t.Heading("Signed in", "Your AIAI account is linked to GitHub."))
+	body.WriteString(t.Heading("Signed in", ""))
 	body.WriteString(t.Title("@" + user.Login))
 	body.WriteString("\n")
 	if user.Name != "" {
@@ -37,7 +37,7 @@ func AuthResult(message, warning string, success bool, t Theme) string {
 	} else {
 		message = t.Warn(message)
 	}
-	body := t.Heading("Authentication", "AIAI account session") + message
+	body := t.Heading("Authentication", "") + message
 	if warning != "" {
 		body += "\n\n" + t.Warn(warning)
 	}

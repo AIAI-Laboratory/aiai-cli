@@ -1,13 +1,16 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 )
 
 func (m Model) View() tea.View {
@@ -25,11 +28,11 @@ func (m Model) View() tea.View {
 	if m.showingShellOutput() && m.shellHistory {
 		m.viewport.EnsureVisible(m.shellSelected*3, 0, 2)
 	}
-	if m.screen == form || m.screen == home && !m.showingShellOutput() || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
+	if m.screen == form || m.screen == home && !m.showingShellOutput() || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation || m.screen == projectPicker || m.screen == projectAdd {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
-				if m.screen == form && m.focus < 3 {
+				if m.screen == form && m.focus < 3 || m.screen == projectPicker || m.screen == projectAdd {
 					m.viewport.EnsureVisible(line+1, 0, 1)
 				}
 				break
@@ -47,19 +50,18 @@ func (m Model) content() string {
 	t := m.theme()
 	var body string
 	switch m.screen {
+	case projectPicker, projectAdd:
+		body = m.projectSwitchView()
 	case home:
 		if m.showingShellOutput() {
 			body = m.shellContent()
 		} else if shellInput(m.command.Value()) {
-			body = t.Heading("Terminal command", "Enter runs inline · Alt+Enter opens terminal") + t.Muted("Working directory: "+m.opts.Terminal.Dir)
+			body = t.Title(shellPath(m.opts.Terminal.Dir)) + "\n\n" + t.Keys("enter run · alt+enter interactive")
 		} else {
 			body = screens.Home(m.cursor, m.command.Value(), m.homeCategory, t)
 		}
 		if m.shellNotice != "" {
 			body = t.Warn(m.shellNotice) + "\n\n" + body
-		}
-		if m.projectContext != "" && !m.showingShellOutput() {
-			body = t.Muted(t.Truncate(m.projectContext, t.Width())) + "\n\n" + body
 		}
 	case selection:
 		items := make([]screens.TemplateItem, len(m.templates))
@@ -81,14 +83,14 @@ func (m Model) content() string {
 			body = t.Accent("! "+m.formError) + "\n\n" + body
 		}
 	case planning:
-		body = m.loading("Building your preview", "Rendering the template and checking destination files.")
+		body = m.loading("Building preview…")
 	case preview:
 		body = screens.Preview(*m.plan, m.opts.DryRun, t)
 	case confirmation:
-		body = t.Heading("Ready to create?", "Apply the file operations you just reviewed.") + t.Muted(m.plan.TargetDir) + "\n\n" +
+		body = t.Heading("Create project?", "") + t.Muted(m.plan.TargetDir) + "\n\n" +
 			t.Choice("No, return to preview", "", !m.confirmYes) + t.Choice("Yes, generate files", "", m.confirmYes)
 	case applying:
-		body = m.loading("Creating your project", "Writing files from the approved plan.")
+		body = m.loading("Creating project…")
 		if m.canceling {
 			body = t.Warn("Canceling; waiting for the current file to finish…")
 		}
@@ -97,12 +99,12 @@ func (m Model) content() string {
 	case help:
 		body = screens.Help(t)
 	case about:
-		body = t.Heading("Small tool. Solid foundations.", "AIAI CLI · "+m.opts.Version) + "Deterministic project scaffolding.\nEmbedded templates. Offline generation.\n\n" + t.Muted("Choose a template, review the plan, and start building.")
+		body = t.Heading("AIAI CLI · "+m.opts.Version, "") + "Projects · Git · SSH · Zen · Monitor"
 	case authStarting:
-		body = m.loading("Connecting to AIAI", "Preparing your authentication session.")
+		body = m.loading("Connecting to AIAI…")
 	case authWaiting:
 		if m.authDevice == nil {
-			body = m.loading("Connecting to AIAI", "Preparing your authentication session.")
+			body = m.loading("Connecting to AIAI…")
 		} else {
 			body = screens.DeviceLogin(*m.authDevice, t) + "\n\n" + m.progress.View() + " " + t.Muted("Waiting for authorization…")
 		}
@@ -118,7 +120,7 @@ func (m Model) content() string {
 		body = t.Heading("Sign out?", "This removes the AIAI credential stored on this device.") +
 			t.Choice("No, keep me signed in", "", !m.logoutYes) + t.Choice("Yes, sign out", "", m.logoutYes)
 	case loggingOut:
-		body = m.loading("Signing out", "Revoking the server session and removing local credentials.")
+		body = m.loading("Signing out…")
 	case updatePrompt:
 		tag := ""
 		bodyText := ""
@@ -139,8 +141,11 @@ func (m Model) content() string {
 			tag = m.updateRelease.TagName
 		}
 		body = screens.UpdateResult(tag, m.updateResultOK, m.updateErr, m.updateResultCursor, t)
+		if m.updateResultOK && m.updateNotice != "" {
+			body = t.Heading("Update check", m.updateNotice) + t.Choice("Return to home", "", true)
+		}
 	case serverLoading:
-		body = m.loading("Loading SSH servers", "Reading local profiles from this computer.")
+		body = m.loading("Loading SSH servers…")
 	case serverList:
 		body = screens.ServerList(m.visibleServers(), m.cursor, m.serverConnect, m.search.Value(), t)
 	case serverDetail:
@@ -151,13 +156,13 @@ func (m Model) content() string {
 			body = screens.ServerDetail(servers[m.cursor], t)
 		}
 	case logLoading:
-		body = m.loading("Loading SSH history", "Reading local access logs.")
+		body = m.loading("Loading SSH history…")
 	case accessLogs:
 		body = screens.AccessLogs(m.logs, t)
 	case sshFailure:
 		body = screens.SSHFailure(m.sshErr, t)
 	case keyLoading:
-		body = m.loading("Finding SSH keys", "Scanning AIAI's managed key directory and ~/.ssh.")
+		body = m.loading("Finding SSH keys…")
 	case keyList:
 		body = screens.KeyList(m.visibleKeys(), m.keyQuery, m.search.Value(), m.keyNotice, m.cursor, t)
 	case keyDetail:
@@ -178,8 +183,8 @@ func (m Model) content() string {
 	return lipgloss.NewStyle().Width(t.Width()).Render(body)
 }
 
-func (m Model) loading(title, subtitle string) string {
-	return m.progress.View() + " " + m.theme().Title(title) + "\n" + m.theme().Muted(subtitle)
+func (m Model) loading(title string) string {
+	return m.progress.View() + " " + m.theme().Title(title)
 }
 
 func (m Model) chrome() (string, string) {
@@ -204,10 +209,46 @@ func (m Model) chrome() (string, string) {
 
 func (m Model) header() string {
 	t := m.theme()
-	if m.screen == home && !m.showingShellOutput() && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" {
-		return m.welcomeHeader()
+	header := t.Title("AIAI CLI")
+	if m.screen == projectPicker {
+		header = t.Title("AIAI CLI / Switch project")
+		if t.Width() < 32 {
+			header = t.Title("Switch project")
+		}
 	}
-	return t.Title("AIAI CLI") + "\n" + t.Rule()
+	if m.screen == home && !m.showingShellOutput() && m.homeCategory == "" && strings.TrimSpace(m.command.Value()) == "" && m.height >= 18 {
+		header = m.welcomeHeader()
+	}
+	if m.screen == home && m.projectContext.Project != "" {
+		return header + "\n" + m.contextView() + "\n" + t.Rule()
+	}
+	return header + "\n" + t.Rule()
+}
+
+func (m Model) contextView() string {
+	t := m.theme()
+	width := t.Width()
+	c := m.projectContext
+	project := strings.Join(strings.Fields(ansi.Strip(c.Project)), " ")
+	branch := strings.Join(strings.Fields(ansi.Strip(c.Branch)), " ")
+	if branch == "" {
+		return t.Truncate(t.Title("Project "+project), width)
+	}
+	status, color := "Clean", style.Good
+	if c.Changes > 0 {
+		status, color = fmt.Sprintf("%d changes", c.Changes), style.Warn
+		if c.Changes == 1 {
+			status = "1 change"
+		}
+	}
+	status = style.Paint("["+status+"]", color, true, t.NoColor())
+	project = t.Truncate(t.Title("Project "+project), width)
+	branch = style.Paint("├─ "+branch, style.Info, true, t.NoColor())
+	if width < 32 {
+		return project + "\n" + t.Truncate(branch, width) + "\n" + t.Truncate(status, width)
+	}
+	branch = t.Truncate(branch, max(1, width-lipgloss.Width(status)-3))
+	return project + "\n" + branch + "   " + status
 }
 
 func (m Model) welcomeHeader() string {
@@ -230,8 +271,7 @@ func (m Model) welcomeHeader() string {
 	if t.Width() < 60 {
 		return truncate(t.Accent("◆")+" "+title, t.Width()) + "\n" +
 			truncate(t.Muted("Your next project starts here."), t.Width()) + "\n" +
-			truncate(t.Muted(path), t.Width()) + "\n" +
-			truncate(status, t.Width()) + "\n" + t.Rule()
+			truncate(t.Muted(path), t.Width()) + "\n" + truncate(status, t.Width())
 	}
 
 	logo := strings.Split(m.logo(), "\n")
@@ -254,7 +294,7 @@ func (m Model) welcomeHeader() string {
 		padding := strings.Repeat(" ", logoWidth-lipgloss.Width(logoRow))
 		rows[i] = logoRow + padding + "   " + truncate(info[i], textWidth)
 	}
-	return strings.Join(rows, "\n") + "\n" + t.Rule()
+	return strings.Join(rows, "\n")
 }
 
 // The open A and red i² reproduce the supplied AIAI mark in terminal cells.
@@ -278,6 +318,16 @@ func (m Model) logo() string {
 
 func (m Model) toolbar() string {
 	t := m.theme()
+	if m.screen == projectPicker || m.screen == projectAdd {
+		var rows []string
+		if m.screen == projectPicker {
+			rows = append(rows, t.Accent("> ")+t.Title("Search: ")+m.projects.input.View(), t.Rule())
+		}
+		if m.projects.notice != "" {
+			rows = append(rows, t.Warn(t.Truncate(strings.Join(strings.Fields(ansi.Strip(m.projects.notice)), " "), t.Width())))
+		}
+		return strings.Join(rows, "\n")
+	}
 	if m.screen == home {
 		if m.showingShellOutput() {
 			return t.Accent("❯ ") + m.command.View()
@@ -311,6 +361,13 @@ func (m Model) footer() string {
 	t := m.theme()
 	hint := "↑/↓ navigate · enter select · esc back"
 	switch m.screen {
+	case projectPicker:
+		hint = "↑/↓ select · enter switch · ctrl+r refresh · esc back"
+	case projectAdd:
+		hint = "tab field · enter next · esc back"
+		if m.projects.focus == 1 {
+			hint = "tab field · enter add & switch · esc back"
+		}
 	case home:
 		if m.shellHistory {
 			hint = "↑/↓ select · enter view output · F2 back"
@@ -321,7 +378,7 @@ func (m Model) footer() string {
 		} else if shellInput(m.command.Value()) || m.homeCategory == "" && m.command.Value() == "" && len(m.opts.Terminal.History) > 0 {
 			hint = "tab complete · ↑/↓ history · enter run"
 		} else if m.homeCategory == "" && m.command.Value() == "" {
-			hint = "↑/↓ choose · enter open"
+			hint = "↑/↓ choose · enter open · ctrl+k projects"
 		} else {
 			hint = "↑/↓ choose · enter select · tab complete"
 		}
@@ -367,8 +424,24 @@ func (m Model) footer() string {
 	case planning, applying, authStarting, loggingOut, updating, serverLoading, logLoading, keyLoading:
 		hint = "ctrl+c cancel safely"
 	}
+	if (m.screen == projectPicker || m.screen == projectAdd) && m.projects.busy {
+		hint = "ctrl+c cancel"
+		if m.screen == projectPicker {
+			hint = "esc back · ctrl+c cancel"
+		}
+	}
 	if t.Width() < 48 {
 		switch m.screen {
+		case projectPicker:
+			hint = "↑/↓ select · enter · esc back"
+			if m.projects.busy {
+				hint = "esc back · ctrl+c cancel"
+			}
+		case projectAdd:
+			hint = "tab field · enter · esc back"
+			if m.projects.busy {
+				hint = "ctrl+c cancel"
+			}
 		case home, selection:
 			hint = "↑/↓ choose · enter open · esc back"
 			if m.screen == home && m.showingShellOutput() {
@@ -395,6 +468,9 @@ func (m Model) footer() string {
 		}
 	}
 	status := " · ? help"
+	if m.screen == projectPicker || m.screen == projectAdd {
+		status = ""
+	}
 	if m.screen == home {
 		status = " · esc quit"
 		if m.showingShellOutput() {

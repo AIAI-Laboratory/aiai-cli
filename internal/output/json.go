@@ -31,6 +31,7 @@ type Update struct {
 	HasUpdate      bool             `json:"has_update"`
 	Action         string           `json:"action"`
 	Release        *updater.Release `json:"release,omitempty"`
+	Notice         string           `json:"notice,omitempty"`
 }
 
 type SSH struct {

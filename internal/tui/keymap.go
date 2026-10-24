@@ -243,6 +243,13 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case updateResult:
+		if m.updateResultOK && m.updateRelease == nil {
+			if key == "enter" {
+				m.screen, m.cursor = home, 0
+				return m, nil
+			}
+			break
+		}
 		if m.updateResultOK {
 			switch key {
 			case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
@@ -476,6 +483,8 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		m.viewport.GotoTop()
 		switch screens.HomeItems[selected].Name {
+		case "/switch":
+			return m.openProjectSwitcher()
 		case "/init":
 			m.screen = selection
 		case "/servers", "/ssh":
@@ -552,7 +561,7 @@ func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen = updating
 			m.updateStep = "Checking GitHub for updates…"
 			return m, m.withProgress(func() tea.Msg {
-				res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, true)
+				res, err := m.updater.CheckForUpdate(m.ctx, m.opts.Version, false)
 				return updateCheckedMsg{result: res, err: err, manual: true}
 			})
 		case "/zen":

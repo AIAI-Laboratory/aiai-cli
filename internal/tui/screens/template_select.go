@@ -7,7 +7,7 @@ type TemplateItem struct {
 }
 
 func TemplateSelect(items []TemplateItem, cursor int, t Theme) string {
-	body := t.Heading("Choose a template", "A solid starting point, ready to make your own.")
+	body := t.Heading("Choose a template", "")
 	if len(items) == 0 {
 		return body + t.Muted("No templates available. Esc to return.")
 	}

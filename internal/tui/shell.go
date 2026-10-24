@@ -74,6 +74,7 @@ func pollShell(job *shellJob) tea.Cmd {
 
 func (m Model) showingShellOutput() bool {
 	return m.screen == home && m.homeCategory == "" && len(m.shellResults) > 0 &&
+		!m.shellHidden &&
 		(m.shellHistory || m.command.Value() == "" || shellInput(m.command.Value()))
 }
 
@@ -123,6 +124,7 @@ func (m Model) runShell(native bool) (tea.Model, tea.Cmd) {
 	m.historyCursor, m.historyDraft = len(history), ""
 	m.command.SetValue("")
 	m.shellNotice = ""
+	m.shellHidden = false
 	m.homeCategory = ""
 	if native {
 		process := &platform.ShellCommand{Context: m.ctx, Session: m.opts.Terminal, Line: line}
@@ -190,11 +192,8 @@ func (m Model) shellFinished(msg shellFinishedMsg) (tea.Model, tea.Cmd) {
 	if dir, err := os.Getwd(); err == nil {
 		m.opts.Terminal.Dir = dir
 	}
-	m.projectContext = ""
-	if m.opts.Context != nil {
-		return m, func() tea.Msg { return contextMsg(m.opts.Context(m.ctx)) }
-	}
-	return m, nil
+	m.projectContext = ProjectContext{}
+	return m, m.loadContext()
 }
 
 func (m *Model) trimShellResults() {
@@ -210,6 +209,7 @@ func (m *Model) trimShellResults() {
 }
 
 func (m Model) shellKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.shellHidden = false
 	m.homeCategory = ""
 	if strings.HasPrefix(m.command.Value(), "/") && !shellInput(m.command.Value()) {
 		m.command.SetValue("")

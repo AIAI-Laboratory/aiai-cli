@@ -370,7 +370,7 @@ func TestCommandPalette(t *testing.T) {
 }
 
 func TestViewsFitTerminal(t *testing.T) {
-	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
+	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 12}, {80, 12}, {120, 12}, {60, 22}, {80, 24}, {120, 40}} {
 		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
@@ -389,6 +389,7 @@ func TestViewsFitTerminal(t *testing.T) {
 				m.sshErr = fmt.Errorf("example SSH error")
 				m.keys = []sshmanager.Key{{Name: strings.Repeat("laptop-", 12), Type: "ssh-ed25519", Fingerprint: "SHA256:" + strings.Repeat("x", 80), PrivatePath: "/keys/" + strings.Repeat("long-path/", 20), PublicPath: "/keys/laptop.pub", Managed: true}}
 				m.focus = 5
+				m.projectContext = ProjectContext{Project: "aiai-cli", Branch: "feat/tui-ux-polish", Changes: 23}
 				next, _ := m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 				m = next.(Model)
 				view := m.View().Content
@@ -413,11 +414,14 @@ func TestWelcomeHeaderRestoresBrandAndSessionContext(t *testing.T) {
 	m.authUser = &user
 
 	header := m.header()
-	if !strings.Contains(header, "AIAI CLI  0.4.1") || !strings.Contains(header, "Your next project starts here.") {
-		t.Fatalf("welcome header is missing the product title or tagline: %q", header)
+	if !strings.Contains(header, "AIAI CLI  0.4.1") {
+		t.Fatalf("welcome header is missing the product title: %q", header)
 	}
 	if !strings.Contains(header, "Offline templates") || !strings.Contains(header, "Signed in as @octocat") {
-		t.Fatalf("welcome header is missing template or account status: %q", header)
+		t.Fatalf("welcome header is missing account status: %q", header)
+	}
+	if !strings.Contains(header, "Your next project starts here.") {
+		t.Fatalf("welcome header lost the original tagline: %q", header)
 	}
 	if !strings.Contains(header, "▄██▄") || !strings.Contains(header, "▐██▌▐██▌") || !strings.Contains(header, "▄▀▀▄") {
 		t.Fatalf("welcome header is missing the original ASCII logo: %q", header)
@@ -427,6 +431,53 @@ func TestWelcomeHeaderRestoresBrandAndSessionContext(t *testing.T) {
 	categoryHeader := m.header()
 	if strings.Contains(categoryHeader, "Your next project starts here.") || !strings.Contains(categoryHeader, "AIAI CLI") {
 		t.Fatalf("category view should use the compact header: %q", categoryHeader)
+	}
+}
+
+func TestProjectContextIsDistinctAndFitsTerminal(t *testing.T) {
+	for _, size := range [][2]int{{24, 12}, {40, 12}, {40, 24}, {80, 24}, {120, 30}} {
+		for _, changes := range []int{0, 1, 23} {
+			m := NewModel(context.Background(), nil, nil, nil, nil, nil, Options{NoColor: true})
+			defer m.cancel()
+			m.width, m.height = size[0], size[1]
+			m.projectContext = ProjectContext{Project: "aiai-cli", Branch: "feat/tui-ux-polish", Changes: changes}
+			view := m.contextView()
+			if lipgloss.Width(view) > m.theme().Width() || strings.Contains(view, "\x1b") {
+				t.Fatalf("%v invalid context width or NO_COLOR: %q", size, view)
+			}
+			if !strings.Contains(view, "Project") || !strings.Contains(view, "├─ ") || !strings.Contains(view, "[") {
+				t.Fatalf("%v context lost its labels: %q", size, view)
+			}
+			rows := strings.Split(view, "\n")
+			if !strings.HasPrefix(rows[0], "Project ") || strings.Contains(rows[0], "├─") || !strings.HasPrefix(rows[1], "├─ ") {
+				t.Fatalf("%v project and Git branch are not separated: %q", size, view)
+			}
+			if size[0] >= 80 && (!strings.Contains(view, "aiai-cli") || !strings.Contains(view, "feat/tui-ux-polish")) {
+				t.Fatalf("%v context truncated short values: %q", size, view)
+			}
+			if changes == 0 && !strings.Contains(view, "[Clean]") {
+				t.Fatal("clean repository is not identified")
+			}
+			if changes == 1 && size[0] >= 40 && !strings.Contains(view, "[1 change]") {
+				t.Fatal("singular change is not identified")
+			}
+			if strings.ContainsAny(view, "╭╮╯╰") {
+				t.Fatal("compact context has an unnecessary frame")
+			}
+			expected := 2
+			if m.theme().Width() < 32 {
+				expected = 3
+			}
+			if lipgloss.Height(view) != expected {
+				t.Fatalf("%v status line wrapped unexpectedly: %q", size, view)
+			}
+			m.projectContext.Project = strings.Repeat("项目", 40)
+			m.projectContext.Branch = strings.Repeat("feature/", 20)
+			full := m.View().Content
+			if lipgloss.Width(full) > m.width || lipgloss.Height(full) > m.height {
+				t.Fatalf("%v context overflowed the screen", size)
+			}
+		}
 	}
 }
 
@@ -685,6 +736,7 @@ func TestPreviewScrollAndPartialCancellation(t *testing.T) {
 type fakeTUIUpdater struct {
 	checkResult *updater.CheckResult
 	checkErr    error
+	checkForced bool
 	applyErr    error
 	postponeErr error
 	applied     bool
@@ -694,6 +746,7 @@ type fakeTUIUpdater struct {
 }
 
 func (f *fakeTUIUpdater) CheckForUpdate(ctx context.Context, currentVersion string, force bool) (*updater.CheckResult, error) {
+	f.checkForced = force
 	if f.checkErr != nil {
 		return nil, f.checkErr
 	}
@@ -838,9 +891,61 @@ func TestManualUpdateCommandFromHome(t *testing.T) {
 		t.Fatalf("expected updateResult (up to date), got screen=%d", m.screen)
 	}
 
-	// Press enter or esc to return to home
-	m, _ = press(m, tea.KeyEscape)
+	if u.checkForced || strings.Contains(m.content(), "Restart now") {
+		t.Fatal("manual check forced an update or offered an unnecessary restart")
+	}
+	// Enter returns home without restarting when there is nothing to install.
+	m, cmd = press(m, tea.KeyEnter)
 	if m.screen != home {
 		t.Fatalf("expected return to home, got %d", m.screen)
+	}
+	if cmd != nil || u.restarted {
+		t.Fatal("up-to-date result exited or restarted AIAI")
+	}
+}
+
+func TestHomeRestoresCommandResultsAndShowsToolFailure(t *testing.T) {
+	opts := Options{NoColor: true, Session: &Session{}}
+	m := NewModel(context.Background(), nil, nil, nil, nil, nil, opts)
+	defer m.cancel()
+	m.shellResults = []shellResult{{line: "echo marker", output: strings.Repeat("marker\n", 100)}, {line: "pwd", output: "/example"}}
+	m.shellSelected, m.shellFollow = 1, true
+	m.saveSession()
+	opts = m.opts
+	opts.Notice = "Could not open Zen: damaged data"
+	reopened := NewModel(context.Background(), nil, nil, nil, nil, nil, opts)
+	defer reopened.cancel()
+	if len(reopened.shellResults) != 2 || reopened.shellSelected != 1 || reopened.shellResults[0].output != m.shellResults[0].output {
+		t.Fatal("returning Home lost command results or selection")
+	}
+	if !strings.Contains(reopened.View().Content, "damaged data") {
+		t.Fatal("tool failure was hidden behind previous command output")
+	}
+	reopened, _ = press(reopened, tea.KeyF2)
+	if !strings.Contains(reopened.View().Content, "echo marker") {
+		t.Fatal("restored command history is inaccessible")
+	}
+}
+
+func TestConfirmationLabelsUseAvailableWidth(t *testing.T) {
+	for _, label := range []string{"Yes, generate files", "Yes, delete both files", "No, keep this key"} {
+		if !strings.Contains(NewTheme(80, true).Choice(label, "", true), label) {
+			t.Fatalf("confirmation label truncated: %s", label)
+		}
+	}
+}
+
+func TestPostponedUpdateShowsReasonAndReturnsHome(t *testing.T) {
+	m := NewModel(context.Background(), nil, nil, nil, nil, nil, Options{NoColor: true})
+	defer m.cancel()
+	next, _ := m.Update(updateCheckedMsg{manual: true, result: &updater.CheckResult{Notice: "Version v1.0.0 was skipped."}})
+	m = next.(Model)
+	view := m.View().Content
+	if !strings.Contains(view, "was skipped") || strings.Contains(view, "Up to date") {
+		t.Fatal("postponed check misrepresented as up to date")
+	}
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != home || cmd != nil {
+		t.Fatal("postponed check did not return Home")
 	}
 }

@@ -26,6 +26,31 @@ func actionGit(t *testing.T, path string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func TestInitialDiffHonorsFileAndStagedOptions(t *testing.T) {
+	m := actionModel(t, 1)
+	for _, name := range []string{"first.txt", "second.txt"} {
+		if err := os.WriteFile(filepath.Join(m.opts.Path, name), []byte("staged content\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	actionGit(t, m.opts.Path, "add", ".")
+	if err := os.WriteFile(filepath.Join(m.opts.Path, "second.txt"), []byte("unstaged content\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := m.opts
+	opts.File, opts.Staged = "./second.txt", true
+	m = NewModel(context.Background(), opts)
+	next, cmd := m.Update(m.Init()())
+	m = next.(Model)
+	if !m.staged || !m.preview || len(m.visible()) != 1 || m.status.Changes[m.visible()[m.cursor]].Path != "second.txt" || cmd == nil {
+		t.Fatal("initial diff lost the requested file or scope")
+	}
+	result := cmd().(diffMsg)
+	if result.err != nil || !strings.Contains(result.text, "+staged content") || strings.Contains(result.text, "+unstaged content") {
+		t.Fatalf("wrong initial diff: %+v", result)
+	}
+}
+
 func actionModel(t *testing.T, page int) Model {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

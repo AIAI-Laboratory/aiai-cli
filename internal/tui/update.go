@@ -24,7 +24,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shellResults[len(m.shellResults)-1].output = msg.job.snapshot()
 		return m, pollShell(msg.job)
 	case contextMsg:
-		m.projectContext = string(msg)
+		if msg.dir == m.opts.Terminal.Dir {
+			m.projectContext = msg.context
+		}
+	case projectsLoadedMsg:
+		return m.projectsLoaded(msg)
+	case projectAddedMsg:
+		return m.projectAdded(msg)
+	case projectOpenedMsg:
+		if msg.dir == m.opts.Terminal.Dir && msg.err != nil {
+			m.shellNotice = "Project opened, but could not save recent history: " + msg.err.Error()
+		}
 	case cancelMsg:
 		return m.stop()
 	case spinner.TickMsg:
@@ -133,6 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = authResult
 	case updateCheckedMsg:
+		m.updateNotice = ""
 		if msg.err != nil {
 			if msg.manual {
 				m.updateResultOK = false
@@ -155,10 +166,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateResultOK = true
 			m.updateRelease = nil
 			m.updateErr = nil
+			m.updateNotice = ""
+			if msg.result != nil {
+				m.updateNotice = msg.result.Notice
+			}
 			m.screen = updateResult
 			m.viewport.GotoTop()
 		}
 	case updateFinishedMsg:
+		m.updateNotice = ""
 		m.updateErr = msg.err
 		m.updateResultOK = msg.err == nil
 		m.updateResultCursor = 0
@@ -232,6 +248,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if m.screen == home && key == "ctrl+k" {
+			return m.openProjectSwitcher()
+		}
 		if m.screen == home && len(m.shellResults) > 0 &&
 			(key == "f2" || key == "alt+left" || key == "alt+right" || m.shellHistory && key != "ctrl+c") {
 			return m.shellKey(msg)
@@ -247,6 +266,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+c" {
 			return m.stop()
+		}
+		if m.screen == projectPicker || m.screen == projectAdd {
+			return m.projectSwitchKey(msg)
 		}
 		if m.screen == planning || m.screen == applying || m.screen == loggingOut || m.screen == updating {
 			return m, nil
@@ -266,6 +288,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.screen == home {
 		return m.updateCommand(msg)
+	}
+	if m.screen == projectPicker || m.screen == projectAdd {
+		return m.updateProjectInput(msg)
 	}
 	return m, nil
 }

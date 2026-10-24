@@ -5,7 +5,7 @@ import "fmt"
 func InitForm(inputs []string, focus int, force, dryRun bool, t Theme) string {
 	labels := []string{"Project name", "Destination", "Python package"}
 	hints := []string{"Blank uses the destination name", "Blank uses the project name", "Blank derives from the project name"}
-	s := t.Heading("Configure your project", "Set the essentials. We will preview every file first.")
+	s := t.Heading("Configure your project", "")
 	for i, input := range inputs {
 		prefix := "  "
 		if i == focus {

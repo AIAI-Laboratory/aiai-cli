@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -30,6 +31,8 @@ type Options struct {
 	Repositories, NoColor bool
 	Width, Height         int
 	Selected              string
+	File                  string
+	Staged                bool
 }
 type (
 	Action struct{ Focus *workspace.Project }
@@ -80,6 +83,9 @@ type Model struct {
 var pages = []string{"Status", "Changes", "History", "Branches", "Worktrees", "Activity"}
 
 func NewModel(ctx context.Context, opts Options) Model {
+	if opts.File != "" {
+		opts.File = filepath.ToSlash(filepath.Clean(opts.File))
+	}
 	if opts.Width == 0 {
 		opts.Width = 80
 	}
@@ -88,8 +94,9 @@ func NewModel(ctx context.Context, opts Options) Model {
 	}
 	input := textinput.New()
 	input.Placeholder = "Search projects or files…"
-	input.CharLimit = 100
+	input.CharLimit = max(100, len([]rune(opts.File)))
 	input.SetWidth(max(1, opts.Width-8))
+	input.SetValue(opts.File)
 	if opts.NoColor {
 		input.SetStyles(textinput.Styles{})
 	}
@@ -99,7 +106,7 @@ func NewModel(ctx context.Context, opts Options) Model {
 	if opts.NoColor {
 		gitInput.SetStyles(textinput.Styles{})
 	}
-	return Model{ctx: ctx, opts: opts, width: opts.Width, height: opts.Height, search: input, gitInput: gitInput, token: 1, loading: true}
+	return Model{ctx: ctx, opts: opts, width: opts.Width, height: opts.Height, search: input, gitInput: gitInput, token: 1, loading: true, staged: opts.Staged}
 }
 
 func Run(ctx context.Context, in io.Reader, out io.Writer, opts Options) (Action, error) {
@@ -325,6 +332,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.opts.Selected = ""
 		}
 		if m.opts.Mode == "git" && m.opts.Page == 1 {
+			if m.opts.File != "" {
+				for i, index := range m.visible() {
+					if m.status.Changes[index].Path == m.opts.File {
+						m.cursor = i
+						break
+					}
+				}
+				m.preview = true
+				m.opts.File = ""
+			}
 			m.diff = "Loading diff…"
 			return m, m.loadDiff()
 		}
@@ -348,7 +365,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searching {
 			switch key {
-			case "esc", "enter":
+			case "esc":
+				m.search.SetValue("")
+				m.cursor, m.offset = 0, 0
+				m.searching = false
+				m.search.Blur()
+			case "enter":
 				m.searching = false
 				m.search.Blur()
 			case "ctrl+u":
@@ -384,6 +406,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.token++
 				m.loading = false
 				return m, nil
+			}
+			if key == "esc" && m.search.Value() != "" {
+				m.search.SetValue("")
+				m.opts.File = ""
+				m.cursor, m.offset = 0, 0
+				if m.loading {
+					return m.refresh()
+				}
+				m.token++
+				m.diff = "Loading diff…"
+				return m, m.loadDiff()
 			}
 			if m.backPath != "" {
 				m.opts.Mode = ""
@@ -659,6 +692,9 @@ func (m Model) scrollRows(rows []string, width, height int) string {
 func (m Model) boardView(width, height int) string {
 	indices := m.visible()
 	if len(indices) == 0 {
+		if len(m.items) > 0 {
+			return "No projects match your search.\n\nPress Esc to clear the filter."
+		}
 		return "No projects yet.\n\naiai workspace add . --name my-project\naiai git repo add . --name my-repo"
 	}
 	list := []string{}

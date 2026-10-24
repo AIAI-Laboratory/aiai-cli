@@ -23,6 +23,7 @@ import (
 	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/updater"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/workspace"
 )
 
 type screen int
@@ -57,6 +58,8 @@ const (
 	keyList
 	keyDetail
 	keyDeleteConfirmation
+	projectPicker
+	projectAdd
 )
 
 type Action struct {
@@ -76,8 +79,25 @@ type Options struct {
 	Version   string
 	SSH       sshmanager.Manager
 	Clipboard func(string) error
-	Context   func(context.Context) string
+	Context   func(context.Context, string) ProjectContext
+	Workspace *workspace.Service
 	Terminal  *platform.ShellSession
+	Session   *Session
+	Notice    string
+}
+
+// Session keeps command results when Home hands control to another tool.
+type Session struct {
+	results  []shellResult
+	selected int
+	follow   bool
+	hidden   bool
+}
+
+type ProjectContext struct {
+	Project string
+	Branch  string
+	Changes int
 }
 
 type Model struct {
@@ -118,6 +138,7 @@ type Model struct {
 	updateRelease      *updater.Release
 	updateStep         string
 	updateErr          error
+	updateNotice       string
 	updateResultOK     bool
 	updateResultCursor int
 	sshManager         sshmanager.Manager
@@ -132,7 +153,7 @@ type Model struct {
 	keyDeleteYes       bool
 	clipboard          func(string) error
 	action             Action
-	projectContext     string
+	projectContext     ProjectContext
 	shellNotice        string
 	historyCursor      int
 	historyDraft       string
@@ -142,10 +163,15 @@ type Model struct {
 	shellHistory       bool
 	completion         *shellCompletion
 	shellFollow        bool
+	shellHidden        bool
+	projects           projectSwitchState
 }
 
 type (
-	contextMsg string
+	contextMsg struct {
+		dir     string
+		context ProjectContext
+	}
 	plannedMsg struct {
 		plan scaffold.Plan
 		err  error
@@ -217,6 +243,7 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 	ctx, cancel := context.WithCancel(ctx)
 	m := Model{
 		ctx:           ctx,
+		shellNotice:   opts.Notice,
 		cancel:        cancel,
 		planner:       planner,
 		executor:      executor,
@@ -230,6 +257,14 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 		height:        30,
 		viewport:      viewport.New(viewport.WithWidth(76), viewport.WithHeight(24)),
 		historyCursor: len(opts.Terminal.History),
+	}
+	if opts.Session != nil {
+		m.shellResults = opts.Session.results
+		m.shellSelected, m.shellFollow = opts.Session.selected, opts.Session.follow
+		m.shellHidden = opts.Session.hidden
+	}
+	if opts.Notice != "" {
+		m.shellFollow = false
 	}
 	m.progress = spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	if !opts.NoColor {
@@ -289,16 +324,23 @@ func Run(ctx context.Context, planner project.Planner, executor scaffold.Executo
 		return nil, nil, Action{}, fmt.Errorf("%w: terminal: %v", scaffold.ErrExecution, err)
 	}
 	f := final.(Model)
+	f.saveSession()
 	if f.action.SSHAlias == "" {
 		f.action.SSHAlias = f.sshAlias
 	}
 	return f.result, f.plan, f.action, f.err
 }
 
+func (m Model) saveSession() {
+	if m.opts.Session != nil {
+		*m.opts.Session = Session{results: m.shellResults, selected: m.shellSelected, follow: m.shellFollow, hidden: m.shellHidden}
+	}
+}
+
 func (m Model) Init() tea.Cmd {
 	commands := []tea.Cmd{textinput.Blink}
 	if m.opts.Context != nil {
-		commands = append(commands, func() tea.Msg { return contextMsg(m.opts.Context(m.ctx)) })
+		commands = append(commands, m.loadContext())
 	}
 	if m.auth != nil && !m.opts.StartInit {
 		commands = append(commands, func() tea.Msg {
@@ -319,6 +361,9 @@ func (m Model) theme() Theme {
 }
 
 func (m Model) busy() bool {
+	if (m.screen == projectPicker || m.screen == projectAdd) && m.projects.busy {
+		return true
+	}
 	switch m.screen {
 	case planning, applying, authStarting, authWaiting, loggingOut, updating, serverLoading, logLoading, keyLoading:
 		return true
@@ -346,6 +391,11 @@ func (m *Model) resize() {
 	width := m.theme().Width()
 	m.command.SetWidth(max(1, width-6))
 	m.search.SetWidth(max(1, width-6))
+	m.projects.input.SetWidth(max(1, width-4))
+	if m.screen == projectPicker {
+		m.projects.input.SetWidth(max(1, width-len("> Search: ")-1))
+	}
+	m.projects.name.SetWidth(max(1, width-4))
 	for i := range m.inputs {
 		m.inputs[i].SetWidth(max(1, width-4))
 	}

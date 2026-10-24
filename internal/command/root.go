@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -195,63 +196,47 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 	if !s.interactive() {
 		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
 	}
-	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
+	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH, Workspace: s.deps.Workspace}
 	dir, _ := os.Getwd()
 	opts.Terminal = &platform.ShellSession{Dir: dir}
-	opts.Context = func(ctx context.Context) string {
+	opts.Session = &tui.Session{}
+	opts.Context = func(ctx context.Context, dir string) tui.ProjectContext {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		st, err := s.deps.Git.Status(ctx, ".")
-		if err != nil {
-			return ""
+		st, gitErr := s.deps.Git.Status(ctx, dir)
+		name := filepath.Base(dir)
+		if gitErr == nil {
+			name = st.Name
 		}
-		name := st.Name
 		if s.deps.Workspace != nil {
 			items, e := s.deps.Workspace.List(ctx, false)
 			if e == nil {
 				for _, p := range items {
-					if p.Root == st.Root {
+					if p.Root == dir || gitErr == nil && p.Root == st.Root {
 						name = p.Name
 						break
 					}
 				}
 			}
 		}
-		return safe(fmt.Sprintf("%s · %s · %d changes", name, branchLabel(st), len(st.Changes)))
+		result := tui.ProjectContext{Project: safe(name)}
+		if gitErr == nil {
+			result.Branch, result.Changes = safe(branchLabel(st)), len(st.Changes)
+		}
+		return result
 	}
 	result, plan, action, err := tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
-	for err == nil && (action.Monitor || action.Git || action.Workspace || action.Zen) {
-		switch {
-		case action.Monitor:
-			err = s.runMonitor(ctx, time.Second)
-		case action.Git:
-			err = s.runDeveloper(ctx, devtui.Options{Mode: "git", Path: "."})
-		case action.Workspace:
-			err = s.runDeveloper(ctx, devtui.Options{})
-		case action.Zen:
-			err = s.runZen(ctx, 0, zen.Config{})
+	for err == nil && (action.Monitor || action.Git || action.Workspace || action.Zen || action.SSHAlias != "" || action.GenerateKey != nil) {
+		opts.Notice, err = s.homeAction(ctx, action)
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		if err != nil {
-			return err
+			opts.Notice = "Could not complete the operation: " + err.Error()
 		}
 		result, plan, action, err = tui.Run(ctx, s.deps.Planner, s.deps.Executor, s.deps.Registry.List(), s.deps.Auth, s.deps.Updater, s.deps.In, s.human(), opts)
 	}
 	s.plan, s.result = plan, result
-	if err == nil && action.SSHAlias != "" {
-		return s.deps.SSH.Connect(ctx, action.SSHAlias, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
-	}
-	if err == nil && action.GenerateKey != nil {
-		key, generateErr := s.deps.SSH.GenerateKey(ctx, *action.GenerateKey, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
-		if generateErr != nil {
-			return generateErr
-		}
-		fmt.Fprintln(s.human(), "\nSSH key generated:")
-		printKey(s.human(), key)
-		return nil
-	}
-	if err == nil && action.Zen {
-		return s.runZen(ctx, 0, zen.Config{})
-	}
 	if result != nil && err == nil && !s.json {
 		fmt.Fprint(s.human(), output.ResultText(*result))
 	}
@@ -259,6 +244,26 @@ func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, sta
 		s.status = "planned"
 	}
 	return err
+}
+
+func (s *state) homeAction(ctx context.Context, action tui.Action) (string, error) {
+	switch {
+	case action.Monitor:
+		return "", s.runMonitor(ctx, time.Second)
+	case action.Git:
+		return "", s.runDeveloper(ctx, devtui.Options{Mode: "git", Path: "."})
+	case action.Workspace:
+		return "", s.runDeveloper(ctx, devtui.Options{})
+	case action.Zen:
+		return "", s.runZen(ctx, 0, zen.Config{})
+	case action.SSHAlias != "":
+		err := s.deps.SSH.Connect(ctx, action.SSHAlias, sshmanager.Streams{In: s.deps.In, Out: s.deps.Out, Err: s.deps.Err})
+		return "SSH session ended: " + action.SSHAlias, err
+	case action.GenerateKey != nil:
+		key, err := s.deps.SSH.GenerateKey(ctx, *action.GenerateKey, sshmanager.Streams{In: s.deps.In, Out: s.human(), Err: s.deps.Err})
+		return fmt.Sprintf("SSH key generated: %s\nFingerprint: %s\nPublic key: %s\nOpen /keys to view or copy it.", key.Name, key.Fingerprint, key.PublicPath), err
+	}
+	return "", nil
 }
 
 func (s *state) log(message string, args ...any) {

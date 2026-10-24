@@ -43,6 +43,7 @@ The Home prompt also runs terminal commands directly: `ls -la`, `cd "my project"
 stdout/stderr directly into AIAI, with the command, directory, status and duration
 pinned above its output. Each run has a separate result; **Alt+←/→** switches
 between runs and **F2** opens the run list (arrows to choose, Enter to view).
+Results remain available when returning from Git, Workspace, Zen, Monitor, or SSH.
 PgUp/PgDown scrolls the selected output, Ctrl+C stops a running command, and
 Ctrl+L clears the results. Up to 20 runs / 256 KiB are retained in memory.
 Plain `ls`, `ls -a` and `ls -A` listings use responsive columns, with directories
@@ -108,8 +109,23 @@ aiai workspace today --json
 aiai workspace remove backend  # unregister metadata only; never deletes files
 ```
 
-The Project category in Home exposes `/workspace` and `/git`. A lightweight,
-asynchronous local context line shows the current branch and change count.
+Press **Ctrl+K** or run **/switch** from Home to switch projects. Search registered
+projects by name, directory or tag; recently opened projects appear first. Choose
+**Add project from path…** to register and switch to an existing directory, with
+an optional name. **Add current folder as project…** fills in the current directory
+and folder name; edit the name if needed and press Enter to register it. This
+option appears only when the current folder is not already registered.
+Projects can live in separate folders or on external drives;
+absolute, relative and `~/` paths are supported, including spaces. The switch
+updates the working directory and Git context while preserving the command draft,
+history and results (**F2**). Stop a running command before switching. If a drive
+is disconnected or a directory is missing, the current project stays active.
+
+The Project category in Home exposes `/switch`, `/workspace` and `/git`. The project appears
+on its own line, followed by a Git branch symbol, branch name and change count.
+Narrow terminals stack the fields. Clean and modified states use distinct colors
+and text labels. Labels remain visible with `--no-color`. Context loads
+asynchronously from local data.
 Home startup does not check for updates over the network; use `/update` explicitly.
 Workspace boards use actual Git data, associated focus statistics and recent
 activity. At 120 columns, the board shows three columns; smaller terminals use
@@ -120,6 +136,7 @@ still accessible; unregister/re-register explicitly to change a directory.
 
 Use ↑/↓ or `j/k` to navigate, `/` to search, `r` to refresh, `?` for help and
 Esc/`q` to return. Printable shortcuts are disabled while typing a search.
+Esc clears a search filter before leaving the board or Git page.
 Git and Workspace load asynchronously; no filesystem or Git queries run in
 their render functions. Boards run at most four project queries concurrently,
 with a four-second budget per project. Errors on one project do not hide others.
@@ -135,6 +152,7 @@ aiai git changes --repo /path/to/repo
 aiai git diff --file internal/main.go
 aiai git diff --staged
 aiai git diff --interactive
+aiai git diff --interactive --staged --file internal/main.go
 aiai git history --limit 200 --since 2026-10-01 --author "Example"
 aiai git branches
 aiai git worktrees
@@ -294,6 +312,7 @@ timer independently. Exiting an active focus session asks for confirmation and
 saves actual active time as interrupted; it never counts as a completed
 Pomodoro. The next focus or break stage starts manually unless auto-start is
 enabled in settings.
+Session History scrolls through the entire saved history, including older sessions.
 
 From `/zen`, choose Start Focus, then Default Pomodoro or Custom. Custom lets
 you adjust focus, short break, long break, and cycles with arrow keys before
@@ -347,6 +366,8 @@ capacity; aggregated disk I/O reports the device counters exposed by the OS.
 AIAI can keep local SSH server profiles, reference existing private key files,
 launch the system OpenSSH client, and record connection history. These commands
 work completely offline and do not require an AIAI or GitHub login.
+SSH connections and key generation started from Home return there when finished;
+failures appear in Home so other tools remain accessible.
 
 ```bash
 aiai server add production --host 192.168.1.100 --user ubuntu --port 22 --key ~/.ssh/id_ed25519

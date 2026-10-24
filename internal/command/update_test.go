@@ -45,6 +45,26 @@ func (f *fakeUpdater) Restart() error {
 	return nil
 }
 
+func TestPostponedUpdateOutputAndExplicitReinstall(t *testing.T) {
+	u := &fakeUpdater{checkResult: &updater.CheckResult{Notice: "Version v0.2.0 was skipped."}}
+	for _, args := range [][]string{{"update"}, {"update", "--check"}} {
+		code, out, stderr := runWithUpdater(t, args, false, "", u)
+		if code != 0 || stderr != "" || !strings.Contains(out, "was skipped") || strings.Contains(out, "up to date") || u.applied {
+			t.Fatalf("postponed check output: %d %s %s", code, out, stderr)
+		}
+		code, out, _ = runWithUpdater(t, append(args, "--json"), false, "", u)
+		var e output.Envelope
+		if err := json.Unmarshal([]byte(out), &e); err != nil || code != 0 || e.Update == nil || e.Update.Notice == "" || e.Update.Action == "up-to-date" {
+			t.Fatalf("JSON omitted postponed check reason: %s", out)
+		}
+	}
+	u.checkResult = &updater.CheckResult{HasUpdate: false, LatestRelease: &updater.Release{TagName: "v0.1.0", Version: "0.1.0"}}
+	code, out, stderr := runWithUpdater(t, []string{"update", "--force"}, false, "", u)
+	if code != 0 || !u.applied {
+		t.Fatalf("explicit reinstall stopped working: %d %s %s", code, out, stderr)
+	}
+}
+
 func runWithUpdater(t *testing.T, args []string, interactive bool, input string, u updater.Service) (int, string, string) {
 	t.Helper()
 	r, err := templates.Embedded()

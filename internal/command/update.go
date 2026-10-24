@@ -37,9 +37,12 @@ func (s *state) updateCommand() *cobra.Command {
 					HasUpdate:      checkRes.HasUpdate,
 					Action:         "check",
 					Release:        checkRes.LatestRelease,
+					Notice:         checkRes.Notice,
 				}
 				if !s.json {
-					if checkRes.HasUpdate && checkRes.LatestRelease != nil {
+					if checkRes.Notice != "" {
+						fmt.Fprintln(s.human(), checkRes.Notice)
+					} else if checkRes.HasUpdate && checkRes.LatestRelease != nil {
 						fmt.Fprintf(s.human(), "A new version of AIAI CLI is available: %s (current: %s)\nRun 'aiai update' to upgrade.\n", checkRes.LatestRelease.TagName, s.deps.Version)
 					} else {
 						fmt.Fprintf(s.human(), "AIAI CLI is already up to date (%s).\n", s.deps.Version)
@@ -55,9 +58,17 @@ func (s *state) updateCommand() *cobra.Command {
 					HasUpdate:      false,
 					Action:         "up-to-date",
 					Release:        checkRes.LatestRelease,
+					Notice:         checkRes.Notice,
+				}
+				if checkRes.Notice != "" {
+					s.update.Action = "postponed"
 				}
 				if !s.json {
-					fmt.Fprintf(s.human(), "AIAI CLI is already up to date (%s).\n", s.deps.Version)
+					if checkRes.Notice != "" {
+						fmt.Fprintln(s.human(), checkRes.Notice)
+					} else {
+						fmt.Fprintf(s.human(), "AIAI CLI is already up to date (%s).\n", s.deps.Version)
+					}
 				}
 				return nil
 			}

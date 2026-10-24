@@ -87,7 +87,7 @@ func (s *state) gitCommand() *cobra.Command {
 			child.RunE = func(cmd *cobra.Command, _ []string) error {
 				interactive, _ := cmd.Flags().GetBool("interactive")
 				if interactive && !s.json {
-					return s.runDeveloper(cmd.Context(), devtui.Options{Mode: "git", Path: path, Page: 1})
+					return s.runDeveloper(cmd.Context(), devtui.Options{Mode: "git", Path: path, Page: 1, File: file, Staged: staged})
 				}
 				return s.gitRead(cmd.Context(), "diff", path, file, staged, filter)
 			}

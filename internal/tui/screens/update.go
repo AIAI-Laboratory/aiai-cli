@@ -7,7 +7,7 @@ import (
 func UpdatePrompt(currentVersion, latestVersion, changelog string, cursor int, t Theme) string {
 	var s strings.Builder
 
-	s.WriteString(t.Heading("New version available!", "A fresh release of AIAI CLI is ready to install."))
+	s.WriteString(t.Heading("Update available", ""))
 	s.WriteString(t.Good("● Current: ") + currentVersion + "  ➔  " + t.Accent("Latest: "+latestVersion) + "\n\n")
 
 	if changelog != "" {
@@ -32,40 +32,37 @@ func UpdatePrompt(currentVersion, latestVersion, changelog string, cursor int, t
 }
 
 func Updating(latestVersion, step string, t Theme) string {
-	title := "Updating AIAI CLI…"
-	sub := "Upgrading to " + latestVersion
-	if latestVersion == "" {
-		sub = "Checking for available updates"
+	title := "Updating AIAI CLI"
+	if latestVersion != "" {
+		title += " · " + latestVersion
 	}
 
-	body := t.Heading(title, sub)
+	body := t.Heading(title, "")
 	if step != "" {
-		body += t.Accent("⏳ ") + step + "\n\n"
+		body += step
 	}
-	body += t.Muted("Please keep your terminal open while the update proceeds.")
 	return body
 }
 
 func UpdateResult(latestVersion string, success bool, err error, cursor int, t Theme) string {
 	var s strings.Builder
 	if success {
-		title := "Update complete!"
-		sub := "AIAI CLI has been updated to " + latestVersion
+		title := "Updated to " + latestVersion
 		if latestVersion == "" {
 			title = "Up to date"
-			sub = "AIAI CLI is already running the latest version."
+			return t.Heading(title, "") + t.Choice("Return to home", "", true)
 		}
-		s.WriteString(t.Heading(title, sub))
+		s.WriteString(t.Heading(title, ""))
 		s.WriteString(t.Choice("Restart now", "Immediately relaunch AIAI CLI", cursor == 0))
 		s.WriteString(t.Choice("Exit to terminal", "Return to your shell prompt", cursor == 1))
 	} else {
-		s.WriteString(t.Heading("Update failed", "Could not complete the operation."))
+		s.WriteString(t.Heading("Update failed", ""))
 		errMsg := "unknown error"
 		if err != nil {
 			errMsg = err.Error()
 		}
 		s.WriteString(t.Accent("! "+errMsg) + "\n\n")
-		s.WriteString(t.Choice("Return to home", "Go back to the main menu", true))
+		s.WriteString(t.Choice("Return to home", "", true))
 	}
 	return strings.TrimSuffix(s.String(), "\n")
 }

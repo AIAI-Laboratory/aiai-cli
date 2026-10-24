@@ -118,3 +118,74 @@ func TestFilteredDiffUsesSelectedFileAndKeepsFailuresInPreview(t *testing.T) {
 		t.Fatal("one preview failure hid the file list")
 	}
 }
+
+func TestWorkspaceSearchEmptyStateAndEscape(t *testing.T) {
+	m := NewModel(context.Background(), Options{NoColor: true})
+	m.loading = false
+	m.items = []workspace.Overview{{Project: workspace.Project{Name: "existing"}}}
+	m, _ = press(m, '/')
+	for _, r := range "missing" {
+		m, _ = press(m, r)
+	}
+	m, _ = actionKey(m, tea.KeyEnter)
+	view := m.View().Content
+	if !strings.Contains(view, "No projects match") || strings.Contains(view, "No projects yet") {
+		t.Fatal("empty search misrepresented as empty workspace")
+	}
+	m, cmd := actionKey(m, tea.KeyEscape)
+	if cmd != nil || m.search.Value() != "" || len(m.visible()) != 1 {
+		t.Fatal("Esc left the workspace instead of clearing its filter")
+	}
+	_, cmd = actionKey(m, tea.KeyEscape)
+	if cmd == nil {
+		t.Fatal("Esc no longer leaves an unfiltered workspace")
+	}
+}
+
+func TestGitEscapeClearsFilterAndReloadsSelectedDiff(t *testing.T) {
+	m := NewModel(context.Background(), Options{Mode: "git", Page: 1})
+	m.loading = false
+	m.rows = []string{"first", "second"}
+	m.status.Changes = []gitlocal.Change{{Path: "first", Untracked: true}, {Path: "second", Untracked: true}}
+	m.search.SetValue("second")
+	m, cmd := actionKey(m, tea.KeyEscape)
+	if m.search.Value() != "" || cmd == nil {
+		t.Fatal("Esc did not clear Git filter and refresh preview")
+	}
+	if _, ok := cmd().(diffMsg); !ok {
+		t.Fatal("Esc quit instead of loading the unfiltered selection")
+	}
+}
+
+func TestEscapeFromFilteredTimelinePreservesProject(t *testing.T) {
+	m := NewModel(context.Background(), Options{})
+	m.loading, m.detail = false, true
+	m.items = []workspace.Overview{{Project: workspace.Project{Name: "first"}}, {Project: workspace.Project{Name: "second"}}}
+	m.search.SetValue("second")
+	m, _ = actionKey(m, tea.KeyEscape)
+	if m.detail || m.selected().Project.Name != "second" {
+		t.Fatal("leaving a filtered timeline changed the selected project")
+	}
+	m, _ = actionKey(m, tea.KeyEscape)
+	if m.search.Value() != "" {
+		t.Fatal("second Esc did not clear the board filter")
+	}
+}
+
+func TestEscapeClearsSearchWhileEditingOrRefreshing(t *testing.T) {
+	m := NewModel(context.Background(), Options{})
+	m.loading = false
+	m, _ = press(m, '/')
+	m, _ = press(m, 'x')
+	m, _ = actionKey(m, tea.KeyEscape)
+	if m.searching || m.search.Value() != "" {
+		t.Fatal("Esc kept an unfinished search")
+	}
+	m.search.SetValue("existing")
+	m.loading = true
+	oldToken := m.token
+	m, cmd := actionKey(m, tea.KeyEscape)
+	if m.search.Value() != "" || cmd == nil || m.token <= oldToken {
+		t.Fatal("clearing a filter during refresh left stale loading state")
+	}
+}

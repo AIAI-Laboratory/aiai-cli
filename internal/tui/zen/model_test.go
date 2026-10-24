@@ -2,6 +2,7 @@ package zen
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	zenmodel "github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 )
@@ -282,5 +284,61 @@ func TestStatisticsScrollsWithoutAffectingTimer(t *testing.T) {
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if next.(Model).screen != focusScreen {
 		t.Fatal("stats did not return to focus")
+	}
+}
+
+func TestSettingsSaveFailureVisibleAndRetryClearsError(t *testing.T) {
+	for _, height := range []int{12, 24} {
+		m := NewModel(context.Background(), Options{Mode: StartSettings, Config: zenmodel.DefaultConfig(), NoColor: true, Width: 40, Height: height})
+		m.cursor = 2
+		next, _ := m.Update(savedMsg{err: errors.New("disk full")})
+		m = next.(Model)
+		view := ansi.Strip(m.View().Content)
+		if !strings.Contains(view, "disk full") || !strings.Contains(view, "> ●  Unicode aquarium") && !strings.Contains(view, "> ○  Unicode aquarium") {
+			t.Fatalf("%d rows hid save error or selected setting: %q", height, view)
+		}
+		next, _ = m.Update(savedMsg{})
+		m = next.(Model)
+		if m.err != nil || strings.Contains(m.View().Content, "Save failed") {
+			t.Fatal("successful retry left a stale save error")
+		}
+	}
+}
+
+func TestSmallZenMenusKeepEverySelectedOptionVisible(t *testing.T) {
+	for _, size := range [][2]int{{28, 12}, {40, 12}, {80, 12}, {80, 24}} {
+		for s, labels := range map[screen][]string{
+			menu:              {"Just Chill", "Start Focus", "Focus Statistics", "Session History", "Settings"},
+			focusPresetScreen: {"Default Pomodoro", "Custom"},
+			focusCustomScreen: {"Focus", "Short break", "Long break", "Cycles", "Start focus"},
+			settingsScreen:    {"Auto-start next stage", "Reduced motion", "Unicode aquarium"},
+			exitConfirm:       {"Keep focusing", "End session"},
+		} {
+			for cursor, label := range labels {
+				m := NewModel(context.Background(), Options{Config: zenmodel.DefaultConfig(), NoColor: true, Width: size[0], Height: size[1]})
+				m.screen, m.cursor = s, cursor
+				view := ansi.Strip(m.View().Content)
+				if !strings.Contains(strings.Join(strings.Fields(view), " "), label) || !strings.Contains(view, "> ") || lipgloss.Height(view) > size[1] || lipgloss.Width(view) > size[0] {
+					t.Fatalf("%v screen %d hid selection %q: %q", size, s, label, view)
+				}
+			}
+		}
+	}
+}
+
+func TestHistoryCanScrollToSessionsBeyondFourteen(t *testing.T) {
+	for _, width := range []int{40, 80} {
+		sessions := []zenmodel.Session{}
+		for day := 1; day <= 20; day++ {
+			sessions = append(sessions, zenmodel.Session{StartedAt: time.Date(2026, 10, day, 12, 0, 0, 0, time.Local), Type: zenmodel.SessionFocus, Status: zenmodel.StatusCompleted})
+		}
+		m := NewModel(context.Background(), Options{Mode: StartHistory, Sessions: sessions, Config: zenmodel.DefaultConfig(), NoColor: true, Width: width, Height: 15})
+		for range 100 {
+			next, _ := m.key("pgdown")
+			m = next.(Model)
+		}
+		if view := m.View().Content; !strings.Contains(view, "2026-10-20") && !strings.Contains(view, "20 Oct") {
+			t.Fatalf("%d columns hid older sessions: %q", width, view)
+		}
 	}
 }

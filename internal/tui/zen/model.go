@@ -191,6 +191,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case savedMsg:
 		if msg.err != nil {
 			m.err, m.message = msg.err, "Could not save Zen data: "+msg.err.Error()
+		} else if m.err != nil {
+			m.err, m.message = nil, ""
 		}
 		if msg.session != nil {
 			session := *msg.session
@@ -462,7 +464,7 @@ func (m Model) completeStage(now time.Time) (tea.Model, tea.Cmd) {
 	session := m.session(now, zenmodel.StatusCompleted)
 	m.timer.State = zenmodel.TimerCompleted
 	if m.stage == zenmodel.SessionFocus {
-		m.message = "Focus complete! Your fish are proud of you. Press Enter for your break."
+		m.message = "Focus complete. Press Enter for your break."
 	} else {
 		m.message = "Break complete. Press Enter when you are ready to focus."
 	}
@@ -590,13 +592,30 @@ func (m Model) View() tea.View {
 		return view
 	}
 	width, height := max(1, m.width-4), max(1, m.height-7)
-	body := m.render()
-	if m.screen == statsScreen || m.screen == historyScreen || m.screen == helpScreen {
-		lines := strings.Split(body, "\n")
-		start := min(m.scrollOffset, max(0, len(lines)-height))
-		body = strings.Join(lines[start:], "\n")
+	header := bold("AIAI / Zen") + "\n\n"
+	if m.err != nil {
+		message := ansi.Hardwrap("Save failed: "+m.err.Error(), width, true)
+		message = style.Fit(message, width, max(1, height/2))
+		header += accent(message, m.opts.NoColor) + "\n\n"
+		height = max(1, height-lipgloss.Height(message)-2)
 	}
-	content := bold("AIAI / Zen") + "\n\n" + style.Fit(body, width, height) + "\n\n" + muted(strings.Repeat("─", width), m.opts.NoColor) + "\n" + ansi.Truncate(style.Keys(m.footer(), m.opts.NoColor), width, "…")
+	lines := []string{}
+	selectedEnd := -1
+	for _, line := range strings.Split(m.render(), "\n") {
+		wrapped := strings.Split(ansi.Wrap(line, width, " "), "\n")
+		if strings.HasPrefix(ansi.Strip(line), "> ") {
+			selectedEnd = len(lines) + len(wrapped) - 1
+		}
+		lines = append(lines, wrapped...)
+	}
+	start := 0
+	if m.screen == statsScreen || m.screen == historyScreen || m.screen == helpScreen {
+		start = min(m.scrollOffset, max(0, len(lines)-height))
+	} else if selectedEnd >= 0 {
+		start = max(0, selectedEnd-height+1)
+	}
+	body := strings.Join(lines[start:], "\n")
+	content := header + style.Fit(body, width, height) + "\n\n" + muted(strings.Repeat("─", width), m.opts.NoColor) + "\n" + ansi.Truncate(style.Keys(m.footer(), m.opts.NoColor), width, "…")
 	view := tea.NewView(lipgloss.NewStyle().Padding(1, 2).MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render(content))
 	view.AltScreen = true
 	return view
@@ -624,7 +643,7 @@ func (m Model) render() string {
 	case helpScreen:
 		body = helpView(m.previous)
 	case exitConfirm:
-		body = bold("End this focus session?") + "\n\nActual focused time will be saved as interrupted.\n\n" + choice("Keep focusing", m.cursor == 0, m.opts.NoColor) + "  " + choice("End session", m.cursor == 1, m.opts.NoColor)
+		body = bold("End this focus session?") + "\n\nActual focused time will be saved as interrupted.\n\n" + choice("Keep focusing", m.cursor == 0, m.opts.NoColor) + "\n" + choice("End session", m.cursor == 1, m.opts.NoColor)
 	}
 	return body
 }
@@ -632,7 +651,6 @@ func (m Model) render() string {
 func (m Model) menuView() string {
 	items := [][2]string{{"Just Chill", "Open the aquarium"}, {"Start Focus", "Begin a Pomodoro"}, {"Focus Statistics", "Today and this week"}, {"Session History", "Your saved sessions"}, {"Settings", "Motion and behavior"}}
 	var out strings.Builder
-	out.WriteString(bold("Choose your pace") + "\n\n")
 	for i, item := range items {
 		description := ""
 		if m.width >= 70 {
