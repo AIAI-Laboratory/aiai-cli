@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
@@ -85,5 +86,93 @@ func TestConflictJSON(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, "README.md"))
 	if string(data) != "mine" {
 		t.Fatal("clobbered file")
+	}
+}
+
+func TestInitAgentCLI(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "agent-repo")
+	code, out, stderr := run(t, []string{"init", "agent", dir, "--yes", "--json"}, false, "")
+	if code != 0 {
+		t.Fatalf("code %d: %s %s", code, out, stderr)
+	}
+	var e output.Envelope
+	if err := json.Unmarshal([]byte(out), &e); err != nil {
+		t.Fatal(err, out)
+	}
+	if e.Result == nil || len(e.Result.Completed) != 8 {
+		t.Fatalf("expected 8 written files: %s", out)
+	}
+
+	// Re-run with a custom skill/rule collision and existing AGENTS.md in interactive mode.
+	existingDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(existingDir, "AGENTS.md"), []byte("# Mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(existingDir, ".agents/rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(existingDir, ".agents/rules/docstring.md"), []byte("custom rule"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Empty line chooses default Append for AGENTS.md, then "yes" confirms applying the plan.
+	code, out, stderr = run(t, []string{"init", "agent", existingDir, "--force", "--json"}, true, "\nyes\n")
+	if code != 0 {
+		t.Fatalf("code %d: %s %s", code, out, stderr)
+	}
+	var e2 output.Envelope
+	if err := json.Unmarshal([]byte(out), &e2); err != nil {
+		t.Fatal(err, out)
+	}
+	if e2.Result == nil || len(e2.Result.Protected) != 1 || e2.Result.Protected[0] != ".agents/rules/docstring.md" {
+		t.Fatalf("expected protected rule in JSON result: %s", out)
+	}
+	agentsContent, _ := os.ReadFile(filepath.Join(existingDir, "AGENTS.md"))
+	if !strings.HasPrefix(string(agentsContent), "# Mine\n") || !strings.Contains(string(agentsContent), "# Agent Guidelines") {
+		t.Fatalf("expected AGENTS.md append, got:\n%s", agentsContent)
+	}
+	ruleContent, _ := os.ReadFile(filepath.Join(existingDir, ".agents/rules/docstring.md"))
+	if string(ruleContent) != "custom rule" {
+		t.Fatal("user rule was overwritten")
+	}
+
+	// Subset via --components flag.
+	subsetDir := t.TempDir()
+	code, out, stderr = run(t, []string{"init", "agent", subsetDir, "--components", "agents-md,skill:dev-flow", "--yes"}, false, "")
+	if code != 0 {
+		t.Fatalf("code %d: %s %s", code, out, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(subsetDir, ".agents/skills/dev-flow/SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(subsetDir, "docs/CONTRIBUTING.md")); err == nil {
+		t.Fatal("unselected component docs was written")
+	}
+}
+
+func TestInitPythonWithAndWithoutAgent(t *testing.T) {
+	withAgent := filepath.Join(t.TempDir(), "with-agent")
+	code, out, stderr := run(t, []string{"init", "python", "demo", "--target", withAgent, "--yes"}, false, "")
+	if code != 0 {
+		t.Fatalf("code %d: %s %s", code, out, stderr)
+	}
+	for _, rel := range []string{".pre-commit-config.yaml", "AGENTS.md", ".agents/skills/dev-flow/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(withAgent, rel)); err != nil {
+			t.Errorf("missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(withAgent, "package.json")); err == nil {
+		t.Fatal("Husky/Node package.json should not be generated")
+	}
+
+	withoutAgent := filepath.Join(t.TempDir(), "without-agent")
+	code, out, stderr = run(t, []string{"init", "python", "demo", "--target", withoutAgent, "--no-agent", "--yes"}, false, "")
+	if code != 0 {
+		t.Fatalf("code %d: %s %s", code, out, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(withoutAgent, ".pre-commit-config.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(withoutAgent, "AGENTS.md")); err == nil {
+		t.Fatal("AGENTS.md should not be generated with --no-agent")
 	}
 }

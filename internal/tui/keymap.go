@@ -4,20 +4,88 @@ import (
 	"errors"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 )
 
+func (m *Model) formSlotCount() int {
+	if m.isAgentTemplate() {
+		return 4
+	}
+	if len(m.agentComponents()) > 0 {
+		return 7
+	}
+	return 6
+}
+
+func (m *Model) formInputForFocus(focus int) *textinput.Model {
+	if m.isAgentTemplate() {
+		if focus == 0 && len(m.inputs) > 1 {
+			return &m.inputs[1]
+		}
+		return nil
+	}
+	if focus >= 0 && focus < len(m.inputs) {
+		return &m.inputs[focus]
+	}
+	return nil
+}
+
+func (m Model) formOptionKind(focus int) string {
+	if m.isAgentTemplate() {
+		switch focus {
+		case 0:
+			return "input"
+		case 1:
+			return "force"
+		case 2:
+			return "dry_run"
+		case 3:
+			return "continue"
+		}
+		return ""
+	}
+	if len(m.agentComponents()) > 0 {
+		switch focus {
+		case 0, 1, 2:
+			return "input"
+		case 3:
+			return "include_agent"
+		case 4:
+			return "force"
+		case 5:
+			return "dry_run"
+		case 6:
+			return "continue"
+		}
+		return ""
+	}
+	switch focus {
+	case 0, 1, 2:
+		return "input"
+	case 3:
+		return "force"
+	case 4:
+		return "dry_run"
+	case 5:
+		return "continue"
+	}
+	return ""
+}
+
 func (m *Model) setFocus(focus int) tea.Cmd {
-	m.focus = (focus + 6) % 6
+	slots := m.formSlotCount()
+	m.focus = (focus%slots + slots) % slots
 	for i := range m.inputs {
 		m.inputs[i].Blur()
 	}
-	if m.focus < len(m.inputs) {
-		return m.inputs[m.focus].Focus()
+	if input := m.formInputForFocus(m.focus); input != nil {
+		return input.Focus()
 	}
 	return nil
 }
@@ -42,7 +110,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	textEditing := m.screen == home || (m.screen == form && m.focus < len(m.inputs))
+	textEditing := m.screen == home || (m.screen == form && m.formInputForFocus(m.focus) != nil)
 	if key == "?" && !textEditing {
 		if m.screen == help {
 			m.screen = m.previous
@@ -73,7 +141,16 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen, m.cursor = home, 0
 		case form:
 			m.screen, m.cursor = selection, 0
+		case agentSelect:
+			m.formError = ""
+			m.screen = form
+			return m, m.setFocus(m.focus)
 		case preview:
+			if m.usesAgentSelect() {
+				m.screen = agentSelect
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			m.screen = form
 			return m, m.setFocus(m.focus)
 		case confirmation:
@@ -125,6 +202,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor + 1) % count
 		case "enter":
 			m.opts.Request.TemplateID = m.templates[m.cursor].ID
+			m.formError = ""
 			m.screen = form
 			return m, m.setFocus(0)
 		}
@@ -135,31 +213,42 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "up":
 			return m, m.setFocus(m.focus - 1)
 		case "enter":
-			switch m.focus {
-			case 0, 1, 2:
+			switch m.formOptionKind(m.focus) {
+			case "input":
 				return m, m.setFocus(m.focus + 1)
-			case 3:
+			case "include_agent":
+				m.includeAgent = !m.includeAgent
+			case "force":
 				m.opts.Request.Force = !m.opts.Request.Force
-			case 4:
+			case "dry_run":
 				m.opts.DryRun = !m.opts.DryRun
-			case 5:
+			case "continue":
+				if m.usesAgentSelect() {
+					return m.enterAgentSelect()
+				}
 				return m.prepare()
 			}
+			return m, nil
 		case "space":
-			if m.focus == 3 {
+			switch m.formOptionKind(m.focus) {
+			case "include_agent":
+				m.includeAgent = !m.includeAgent
+				return m, nil
+			case "force":
 				m.opts.Request.Force = !m.opts.Request.Force
 				return m, nil
-			}
-			if m.focus == 4 {
+			case "dry_run":
 				m.opts.DryRun = !m.opts.DryRun
 				return m, nil
 			}
 		}
-		if m.focus < len(m.inputs) {
+		if input := m.formInputForFocus(m.focus); input != nil {
 			var cmd tea.Cmd
-			m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
+			*input, cmd = input.Update(msg)
 			return m, cmd
 		}
+	case agentSelect:
+		return m.agentSelectKey(key)
 	case preview:
 		if key == "enter" && !m.plan.HasConflicts() {
 			if m.opts.DryRun {
@@ -359,6 +448,103 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+func (m Model) agentSelectKey(key string) (tea.Model, tea.Cmd) {
+	comps := m.agentComponents()
+	slots := m.agentSelectSlotCount()
+	showMode := m.showAgentsMDModeSelector()
+	modeSlot := len(comps) + 1
+	continueSlot := len(comps) + 1
+	if showMode {
+		continueSlot++
+	}
+	switch key {
+	case "up", "k", "shift+tab":
+		m.agentFocus = (m.agentFocus + slots - 1) % slots
+		return m, nil
+	case "down", "j", "tab":
+		m.agentFocus = (m.agentFocus + 1) % slots
+		return m, nil
+	case "left", "h":
+		if showMode && m.agentFocus == modeSlot {
+			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, -1)
+		}
+		return m, nil
+	case "right", "l":
+		if showMode && m.agentFocus == modeSlot {
+			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, 1)
+		}
+		return m, nil
+	case "space":
+		if m.agentFocus == 0 {
+			m.toggleAllAgentComponents()
+		} else if m.agentFocus >= 1 && m.agentFocus <= len(comps) {
+			id := comps[m.agentFocus-1].ID
+			m.agentChecked[id] = !m.agentChecked[id]
+			m.clampAgentFocus()
+		} else if showMode && m.agentFocus == modeSlot {
+			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, 1)
+		}
+		m.formError = ""
+		return m, nil
+	case "enter":
+		if m.agentFocus == 0 {
+			m.toggleAllAgentComponents()
+			m.formError = ""
+			return m, nil
+		}
+		if m.agentFocus >= 1 && m.agentFocus <= len(comps) {
+			id := comps[m.agentFocus-1].ID
+			m.agentChecked[id] = !m.agentChecked[id]
+			m.clampAgentFocus()
+			m.formError = ""
+			return m, nil
+		}
+		if showMode && m.agentFocus == modeSlot {
+			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, 1)
+			return m, nil
+		}
+		if m.agentFocus == continueSlot {
+			if m.isAgentTemplate() && len(m.selectedAgentComponents()) == 0 {
+				m.formError = "Select at least one resource."
+				return m, nil
+			}
+			return m.prepare()
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) toggleAllAgentComponents() {
+	target := !m.allAgentComponentsChecked()
+	for _, c := range m.agentComponents() {
+		if target {
+			m.agentChecked[c.ID] = c.Default
+		} else {
+			m.agentChecked[c.ID] = false
+		}
+	}
+	m.clampAgentFocus()
+}
+
+func (m *Model) clampAgentFocus() {
+	slots := m.agentSelectSlotCount()
+	if m.agentFocus >= slots {
+		m.agentFocus = max(0, slots-1)
+	}
+}
+
+func cycleExistingMode(current scaffold.ExistingMode, delta int) scaffold.ExistingMode {
+	order := []scaffold.ExistingMode{scaffold.ExistingAppend, scaffold.ExistingReplace, scaffold.ExistingSkip}
+	idx := 0
+	for i, mode := range order {
+		if mode == current {
+			idx = i
+			break
+		}
+	}
+	return order[(idx+delta+len(order))%len(order)]
 }
 
 func (m Model) homeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

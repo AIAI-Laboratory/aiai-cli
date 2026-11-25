@@ -48,8 +48,13 @@ of the AIAI mark live in
 [assets/aiai-logo.svg](assets/aiai-logo.svg) and [assets/aiai-logo.png](assets/aiai-logo.png).
 
 ```bash
+aiai init                                       # interactive setup pack wizard
+aiai init agent --dry-run                       # preview Agent Setup in current directory
+aiai init agent . --yes                         # add AGENTS.md, rules, skills, and docs
+aiai init agent . --components agents-md,rule:docstring --agents-md append --yes
 aiai init python my-project --dry-run
-aiai init python my-project --yes
+aiai init python my-project --yes               # Python project + default Agent Setup
+aiai init python my-project --no-agent --yes    # Python project only
 aiai init python . --name my-project --package my_project --yes
 aiai init python my-project --target /path/to/project --yes --json
 aiai login
@@ -405,28 +410,29 @@ also receive this ID at link time via `-X main.githubClientID=...`. See
 completely optional: project initialization and all offline commands work without
 a GitHub account or network connection.
 
-## Python template
+## Agent Setup & Python templates
 
-`python-minimal` v1 generates a root Python package, a smoke test, Python 3.13
-configuration, uv dependencies, Ruff, Pyright, Pytest, Husky with pnpm, GitHub
-Actions, and Dependabot for uv and Actions. It is a minimal application layout
-without a publishing build backend.
+`aiai init` offers two built-in offline setup packs:
 
-After generation, run the printed setup commands inside the destination:
+1. **Agent Setup (`agent-kit`, default)** — installs `AGENTS.md`, rules (`.agents/rules/docstring.md`, `.agents/rules/terminal-logging.md` + `.log/` in `.gitignore`), Agent Skills (`.agents/skills/commit-and-pr/SKILL.md`, `.agents/skills/dev-flow/SKILL.md`), and GitHub Flow docs (`docs/CONTRIBUTING.md`, `.github/pull_request_template.md`) into any new or existing repository.
+   - Select `All (default)` or toggle individual resources in the TUI or via `--components`.
+   - When `AGENTS.md` already exists, AIAI prompts whether to **append** (default, idempotent) or **replace** (or pass `--agents-md=append|replace|skip`).
+   - Existing skills and rules with matching names are **protected** and never overwritten, even with `--force`.
+2. **Minimal Python Project (`python-minimal` v1)** — generates a root Python package, a smoke test, Python 3.13 configuration, uv dependencies, Ruff, Pyright, Pytest, standard `pre-commit` configuration (`.pre-commit-config.yaml`), GitHub Actions, and Dependabot for uv and Actions. By default it also composes the Agent Setup pack (disable with `--no-agent` or toggle in the TUI).
+
+After generating a Python project, run the printed setup commands inside the destination:
 
 ```bash
 git init
-corepack enable
-pnpm install
 uv lock
 uv sync
+uv run pre-commit install
 ```
 
-Install Git, uv, Node.js 22+ and Corepack first. `pnpm install` activates Husky via
-the root `prepare` script. Commit the resulting `uv.lock` and `pnpm-lock.yaml`
-before pushing: generated CI requires a lockfile and uses `uv sync --locked`.
-Husky checks formatting, lint, types, and tests through uv. pnpm and Husky updates
-are manual; Dependabot intentionally monitors only uv and GitHub Actions.
+Install Git and uv first. Commit the resulting `uv.lock` before pushing: generated
+CI requires a lockfile and uses `uv sync --locked`. `pre-commit` runs local
+`uv run --locked` hooks for formatting, lint, types, and tests without requiring
+Node.js or pnpm. Dependabot monitors uv and GitHub Actions weekly.
 
 ## Filesystem behavior
 
@@ -499,7 +505,7 @@ goreleaser check
 ```
 
 CI tests on Linux, macOS, and Windows and verifies a generated Python project and
-Husky installation. GoReleaser packages amd64/arm64 binaries and checksums for all
+`pre-commit` hooks. GoReleaser packages amd64/arm64 binaries and checksums for all
 three platforms. Pushing a `v*` tag triggers the GitHub release workflow.
 
 ## Contributing

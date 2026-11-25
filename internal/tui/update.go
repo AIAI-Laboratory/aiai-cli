@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -36,6 +38,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.formError = msg.err.Error()
+			if m.usesAgentSelect() && strings.Contains(msg.err.Error(), "component") {
+				m.screen = agentSelect
+				return m, nil
+			}
 			m.screen = form
 			return m, m.setFocus(m.focus)
 		}
@@ -225,10 +231,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.key(msg)
 	}
-	if m.screen == form && m.focus < len(m.inputs) {
-		var cmd tea.Cmd
-		m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
-		return m, cmd
+	if m.screen == form {
+		if input := m.formInputForFocus(m.focus); input != nil {
+			var cmd tea.Cmd
+			*input, cmd = input.Update(msg)
+			return m, cmd
+		}
 	}
 	if (m.screen == serverList || m.screen == keyList) && m.searching {
 		var cmd tea.Cmd
@@ -277,19 +285,78 @@ func (m Model) stop() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-func (m Model) prepare() (tea.Model, tea.Cmd) {
-	req := m.opts.Request
-	req.ProjectName, req.TargetDir, req.PackageName = m.inputs[0].Value(), m.inputs[1].Value(), m.inputs[2].Value()
-	if req.TargetDir == "" && req.ProjectName != "" {
-		name, err := project.NormalizeName(req.ProjectName)
-		if err != nil {
-			m.formError = err.Error()
-			return m, nil
+func (m Model) resolvedTargetDir() (string, error) {
+	if m.isAgentTemplate() {
+		dest := strings.TrimSpace(m.inputs[1].Value())
+		if dest == "" {
+			return ".", nil
 		}
-		req.TargetDir = filepath.Join(".", name)
+		return dest, nil
 	}
-	if req.TargetDir == "" {
-		req.TargetDir = "."
+	projectName := m.inputs[0].Value()
+	targetDir := m.inputs[1].Value()
+	if targetDir == "" && projectName != "" {
+		name, err := project.NormalizeName(projectName)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(".", name), nil
+	}
+	if targetDir == "" {
+		return ".", nil
+	}
+	return targetDir, nil
+}
+
+func (m Model) enterAgentSelect() (tea.Model, tea.Cmd) {
+	targetDir, err := m.resolvedTargetDir()
+	if err != nil {
+		m.formError = err.Error()
+		return m, nil
+	}
+	exists, _ := scaffold.HasExistingFile(targetDir, "AGENTS.md")
+	m.agentsMDExists = exists
+	if m.agentsMDMode == "" {
+		m.agentsMDMode = scaffold.ExistingAppend
+	}
+	m.agentFocus = 0
+	m.formError = ""
+	m.screen = agentSelect
+	m.viewport.GotoTop()
+	return m, nil
+}
+
+func (m Model) prepare() (tea.Model, tea.Cmd) {
+	targetDir, err := m.resolvedTargetDir()
+	if err != nil {
+		m.formError = err.Error()
+		return m, nil
+	}
+	req := m.opts.Request
+	req.TargetDir = targetDir
+	if m.isAgentTemplate() {
+		req.ProjectName = ""
+		req.PackageName = ""
+		req.IncludeAgent = false
+		req.Components = m.selectedAgentComponents()
+		req.ComponentsSpecified = true
+		req.AgentsMDMode = m.agentsMDMode
+	} else {
+		req.ProjectName = m.inputs[0].Value()
+		req.PackageName = m.inputs[2].Value()
+		if len(m.agentComponents()) > 0 && m.includeAgent {
+			selected := m.selectedAgentComponents()
+			if len(selected) > 0 {
+				req.IncludeAgent = true
+				req.Components = selected
+				req.ComponentsSpecified = true
+				req.AgentsMDMode = m.agentsMDMode
+			} else {
+				req.IncludeAgent = false
+			}
+		} else {
+			req.IncludeAgent = false
+		}
 	}
 	m.formError = ""
 	m.screen = planning

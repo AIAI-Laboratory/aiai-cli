@@ -178,7 +178,7 @@ func jsonRequested(args []string) bool {
 			break
 		}
 		switch arg {
-		case "--name", "--target", "--package":
+		case "--name", "--target", "--package", "--components", "--agents-md":
 			i++
 		case "--json":
 			requested = true
@@ -193,7 +193,7 @@ func jsonRequested(args []string) bool {
 
 func (s *state) wizard(ctx context.Context, req project.InitRequest, dryRun, startInit bool) error {
 	if !s.interactive() {
-		return fmt.Errorf("interactive input is unavailable; use aiai init python <name-or-dot> --yes")
+		return fmt.Errorf("interactive input is unavailable; use aiai init agent --yes or aiai init python <name-or-dot> --yes")
 	}
 	opts := tui.Options{Request: req, DryRun: dryRun, StartInit: startInit, NoColor: s.noColor || os.Getenv("NO_COLOR") != "", Version: s.deps.Version, SSH: s.deps.SSH}
 	opts.Context = func(ctx context.Context) string {

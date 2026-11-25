@@ -1,0 +1,52 @@
+---
+name: commit-and-pr
+description: Write Conventional Commit messages and author Pull Request descriptions following the repository PR template. Use when committing changes, drafting commit messages, or creating and updating Pull Requests.
+---
+
+# Commit and Pull Request Skill
+
+Use this skill whenever preparing commits or creating Pull Requests.
+
+## 1. Review Staged Changes Before Committing
+
+1. Run `git status` and `git diff --staged` to confirm every staged hunk is intentional.
+2. Verify no secrets, temporary files, or `.log/` outputs are staged.
+3. Split unrelated work into separate, atomic commits.
+
+## 2. Write Conventional Commit Messages
+
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```text
+<type>(<optional-scope>): <concise imperative summary>
+
+[optional body explaining WHY the change is needed]
+
+[optional footer(s), e.g. Closes #123]
+```
+
+Allowed types:
+- `feat`: New user-facing feature
+- `fix`: Bug fix
+- `refactor`: Code restructuring without changing external behavior
+- `perf`: Performance improvement
+- `docs`: Documentation-only changes
+- `test`: Adding or updating tests
+- `chore`: Tooling, dependencies, or maintenance tasks
+- `ci`: CI/CD workflow changes
+- `style`: Formatting or whitespace changes only
+
+Guidelines:
+- Keep the subject line under 72 characters, lowercase after the colon, and without a trailing period.
+- Explain **why** in the body when the motivation is not obvious from the diff.
+
+## 3. Create or Update a Pull Request
+
+1. Read `.github/pull_request_template.md` and follow its exact structure.
+2. Use a PR title in Conventional Commit format (e.g., `feat(auth): add device flow token refresh`).
+3. Fill every section honestly:
+   - **Summary**: What changed, why it was needed, and linked issues (`Closes #...`).
+   - **Type of Change**: Check only the applicable boxes.
+   - **Testing**: Record the exact verification commands actually run (e.g., `pre-commit run --all-files`, test suite, linter) and their outcomes.
+   - **Checklist**: Check an item only after verifying it is true.
+4. Target `main` unless the repository explicitly configures another default base branch.

@@ -7,31 +7,49 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 )
 
+// Preview renders the pre-apply file operation summary, list, and warnings.
 func Preview(p scaffold.Plan, dryRun bool, t Theme) string {
 	var s strings.Builder
-	s.WriteString(t.Heading("Review your project", p.TemplateID+" v"+p.TemplateVersion))
+	s.WriteString(t.Heading("Review your plan", p.TemplateID+" v"+p.TemplateVersion))
 	s.WriteString(t.Muted("Destination  ") + t.Truncate(p.TargetDir, max(1, t.Width()-14)) + "\n\n")
 	counts := make(map[scaffold.Action]int)
 	for _, op := range p.Operations {
 		counts[op.Action]++
 	}
-	create := t.Good(fmt.Sprintf("%d create", counts[scaffold.Create]))
-	replace := t.Warn(fmt.Sprintf("%d replace", counts[scaffold.Overwrite]))
-	unchanged := t.Muted(fmt.Sprintf("%d unchanged", counts[scaffold.Skip]))
-	conflicts := t.Accent(fmt.Sprintf("%d conflicts", counts[scaffold.Conflict]))
-	if t.Width() < 58 {
-		s.WriteString(create + " · " + replace + "\n" + unchanged + " · " + conflicts + "\n\n")
-	} else {
-		s.WriteString(create + " · " + replace + " · " + unchanged + " · " + conflicts + "\n\n")
+	parts := []string{
+		t.Good(fmt.Sprintf("%d create", counts[scaffold.Create])),
 	}
+	if counts[scaffold.Append] > 0 {
+		parts = append(parts, t.Good(fmt.Sprintf("%d append", counts[scaffold.Append])))
+	}
+	parts = append(parts,
+		t.Warn(fmt.Sprintf("%d replace", counts[scaffold.Overwrite])),
+		t.Muted(fmt.Sprintf("%d unchanged", counts[scaffold.Skip])),
+	)
+	if counts[scaffold.Protected] > 0 {
+		parts = append(parts, t.Warn(fmt.Sprintf("%d protected", counts[scaffold.Protected])))
+	}
+	parts = append(parts, t.Accent(fmt.Sprintf("%d conflicts", counts[scaffold.Conflict])))
+
+	if t.Width() < 58 && len(parts) > 2 {
+		mid := (len(parts) + 1) / 2
+		s.WriteString(strings.Join(parts[:mid], " · ") + "\n" + strings.Join(parts[mid:], " · ") + "\n\n")
+	} else {
+		s.WriteString(strings.Join(parts, " · ") + "\n\n")
+	}
+
 	for _, op := range p.Operations {
 		label := fmt.Sprintf("%-11s", "+ create")
 		style := t.Good
 		switch op.Action {
+		case scaffold.Append:
+			label, style = fmt.Sprintf("%-11s", "++ append"), t.Good
 		case scaffold.Overwrite:
 			label, style = fmt.Sprintf("%-11s", "~ replace"), t.Warn
 		case scaffold.Skip:
 			label, style = fmt.Sprintf("%-11s", "= unchanged"), t.Muted
+		case scaffold.Protected:
+			label, style = fmt.Sprintf("%-11s", "⊘ protected"), t.Warn
 		case scaffold.Conflict:
 			label, style = fmt.Sprintf("%-11s", "! conflict"), t.Accent
 		}

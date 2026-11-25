@@ -12,8 +12,11 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/platform"
 )
 
+// FileExecutor applies planned file operations atomically inside an os.Root boundary.
 type FileExecutor struct{}
 
+// Apply validates the plan against current filesystem hashes and writes every Create, Append,
+// and Overwrite operation atomically. Skip and Protected operations leave existing files untouched.
 func (FileExecutor) Apply(ctx context.Context, p Plan) (Result, error) {
 	r := NewResult(p.TargetDir)
 	if err := ctx.Err(); err != nil {
@@ -29,7 +32,8 @@ func (FileExecutor) Apply(ctx context.Context, p Plan) (Result, error) {
 	// Validate the entire operation set before creating the target directory.
 	seen := map[string]bool{}
 	for _, op := range p.Operations {
-		if !platform.ValidRelative(op.Path) || seen[op.Path] || (op.Action != Create && op.Action != Overwrite && op.Action != Skip) {
+		validAction := op.Action == Create || op.Action == Append || op.Action == Overwrite || op.Action == Skip || op.Action == Protected
+		if !platform.ValidRelative(op.Path) || seen[op.Path] || !validAction {
 			return r, fmt.Errorf("%w: invalid operation %q", ErrValidation, op.Path)
 		}
 		seen[op.Path] = true
@@ -40,6 +44,9 @@ func (FileExecutor) Apply(ctx context.Context, p Plan) (Result, error) {
 	}
 	defer root.Close()
 	for _, op := range p.Operations {
+		if op.Action == Protected {
+			continue
+		}
 		if err := checkExpected(root, op); err != nil {
 			return r, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
@@ -52,6 +59,10 @@ func (FileExecutor) Apply(ctx context.Context, p Plan) (Result, error) {
 			r.Skipped = append(r.Skipped, op.Path)
 			continue
 		}
+		if op.Action == Protected {
+			r.Protected = append(r.Protected, op.Path)
+			continue
+		}
 		if err := checkExpected(root, op); err != nil {
 			return r, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
@@ -60,7 +71,8 @@ func (FileExecutor) Apply(ctx context.Context, p Plan) (Result, error) {
 		}
 		r.Completed = append(r.Completed, op.Path)
 	}
-	r.NextSteps = []string{"git init", "corepack enable", "pnpm install", "uv lock", "uv sync"}
+	r.NextSteps = append([]string(nil), p.NextSteps...)
+	r.NextStepsNote = p.NextStepsNote
 	return r, nil
 }
 

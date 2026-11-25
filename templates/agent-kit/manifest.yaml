@@ -1,0 +1,71 @@
+id: agent-kit
+version: "1"
+kind: agent
+default_order: 1
+display_name: Agent Setup (Default)
+description: AGENTS.md, rules, skills, and GitHub Flow docs for any project
+variables: []
+next_steps_note: Review AGENTS.md and tailor .agents/rules/ or .agents/skills/ for your repo.
+components:
+  - id: agents-md
+    name: AGENTS.md
+    description: Root agent guide referencing installed rules, skills, and docs
+    default: true
+  - id: rule:docstring
+    name: Rule · Docstring (Google Python)
+    description: Require Google-style docstrings for modules, classes, and functions
+    default: true
+  - id: rule:terminal-logging
+    name: Rule · Terminal Logging (.log/)
+    description: Log agent terminal command output into .log/ and ignore it in Git
+    default: true
+  - id: skill:commit-and-pr
+    name: Skill · Commit & PR
+    description: Write Conventional Commits and fill PR descriptions from template
+    default: true
+  - id: skill:dev-flow
+    name: Skill · Dev Flow (GitHub Flow)
+    description: Branch from main, run pre-commit checks, push, and open PR into main
+    default: true
+  - id: docs
+    name: Docs & PR Template
+    description: docs/CONTRIBUTING.md (dev flow) and .github/pull_request_template.md
+    default: true
+files:
+  - source: AGENTS.md.tmpl
+    destination: AGENTS.md
+    component: agents-md
+    conflict_policy: append
+    append_marker: aiai:agent-kit
+  - source: .agents/rules/docstring.md.tmpl
+    destination: .agents/rules/docstring.md
+    component: rule:docstring
+    conflict_policy: protect
+    protect_root: .agents/rules/docstring.md
+  - source: .agents/rules/terminal-logging.md.tmpl
+    destination: .agents/rules/terminal-logging.md
+    component: rule:terminal-logging
+    conflict_policy: protect
+    protect_root: .agents/rules/terminal-logging.md
+  - source: .gitignore.tmpl
+    destination: .gitignore
+    component: rule:terminal-logging
+    conflict_policy: append_lines
+  - source: .agents/skills/commit-and-pr/SKILL.md.tmpl
+    destination: .agents/skills/commit-and-pr/SKILL.md
+    component: skill:commit-and-pr
+    conflict_policy: protect
+    protect_root: .agents/skills/commit-and-pr
+  - source: .agents/skills/dev-flow/SKILL.md.tmpl
+    destination: .agents/skills/dev-flow/SKILL.md
+    component: skill:dev-flow
+    conflict_policy: protect
+    protect_root: .agents/skills/dev-flow
+  - source: docs/CONTRIBUTING.md.tmpl
+    destination: docs/CONTRIBUTING.md
+    component: docs
+    conflict_policy: block
+  - source: .github/pull_request_template.md.tmpl
+    destination: .github/pull_request_template.md
+    component: docs
+    conflict_policy: block

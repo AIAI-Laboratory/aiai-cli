@@ -49,21 +49,18 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
       - run: go run ./cmd/aiai init python example-project --target "${{ runner.temp }}/aiai-python" --yes
-      - name: Verify generated project and Git hooks
+      - name: Verify generated project and pre-commit hooks
         working-directory: ${{ runner.temp }}/aiai-python
         run: |
           git init
-          corepack enable
-          pnpm install
           uv lock
           uv sync --locked
           uv run --locked ruff format --check .
           uv run --locked ruff check .
           uv run --locked pyright
           uv run --locked pytest
-          test "$(git config core.hooksPath)" = '.husky/_'
-          sh .husky/_/pre-commit
+          uv run --locked pre-commit install
+          test -f .git/hooks/pre-commit
+          git add .
+          uv run --locked pre-commit run --all-files

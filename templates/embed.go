@@ -3,7 +3,7 @@ package templates
 
 import "embed"
 
-// Files includes dotfiles and underscored Python modules.
+// Files includes embedded templates, dotfiles, and underscored Python modules.
 //
-//go:embed all:python-minimal
+//go:embed all:agent-kit all:python-minimal
 var Files embed.FS

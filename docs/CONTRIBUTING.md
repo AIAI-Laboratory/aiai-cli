@@ -227,11 +227,11 @@ go run ./cmd/aiai init python smoke-test --target /tmp/smoke-test --yes
 # Verify generated project
 cd /tmp/smoke-test
 git init
-corepack enable
-pnpm install
 uv lock
 uv sync --locked
 uv run --locked pytest
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files
 ```
 
 ### 4. Committing Changes

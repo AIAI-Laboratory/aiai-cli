@@ -1,0 +1,24 @@
+# Agent Guidelines
+
+Follow these project rules, skills, and workflow documents whenever working in this repository.
+
+## Rules (`.agents/rules/`)
+
+- [`.agents/rules/docstring.md`](.agents/rules/docstring.md): Document new and modified functions, methods, classes, and modules (Google-style docstrings for Python).
+- [`.agents/rules/terminal-logging.md`](.agents/rules/terminal-logging.md): Save output from agent-executed terminal commands into `.log/` and never commit `.log/`.
+
+## Skills (`.agents/skills/`)
+
+- [`.agents/skills/dev-flow/SKILL.md`](.agents/skills/dev-flow/SKILL.md): Follow GitHub Flow — branch from `main`, run pre-commit checks, push, and open a Pull Request into `main`.
+- [`.agents/skills/commit-and-pr/SKILL.md`](.agents/skills/commit-and-pr/SKILL.md): Write Conventional Commits and complete the Pull Request template accurately.
+
+## Project Documentation
+
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md): Branching strategy, commit standards, pre-commit checks, and PR workflow.
+- [`.github/pull_request_template.md`](.github/pull_request_template.md): Pull Request structure and verification checklist.
+
+## Core Working Principles
+
+1. Never commit or push directly to `main`; create a feature or fix branch first.
+2. Run pre-commit hooks, linters, type checks, and tests before committing or pushing.
+3. Keep changes focused, preserve existing user conventions, and keep documentation in sync with code changes.
