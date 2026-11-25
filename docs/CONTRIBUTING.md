@@ -146,7 +146,7 @@ test(command): add golden test for json dry-run output
 ### 1. Prerequisites & Environment Setup
 
 Ensure you have the following installed locally:
-- **Go**: 1.27.3+ (`go version`)
+- **Go**: 1.27.4+ (`go version`)
 - **Git**: 2.30+
 - **golangci-lint**: latest v2 (`golangci-lint --version`)
 - **goimports**: managed via Go tool directives in `go.mod` (or `go install golang.org/x/tools/cmd/goimports@latest`)
@@ -227,11 +227,11 @@ go run ./cmd/aiai init python smoke-test --target /tmp/smoke-test --yes
 # Verify generated project
 cd /tmp/smoke-test
 git init
-corepack enable
-pnpm install
 uv lock
 uv sync --locked
 uv run --locked pytest
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files
 ```
 
 ### 4. Committing Changes

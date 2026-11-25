@@ -32,7 +32,7 @@ type Command struct {
 }
 
 var HomeItems = []Command{
-	{"/init", "Initialize a Python project", "Project"},
+	{"/init", "Initialize Agent Setup or a project", "Project"},
 	{"/workspace", "Your projects and development timeline", "Project"},
 	{"/git", "Git commit, pull, push and branches", "Project"},
 	{"/servers", "Browse local SSH server profiles", "SSH"},

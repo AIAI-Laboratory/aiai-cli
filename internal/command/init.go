@@ -12,28 +12,94 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/output"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/project"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
+	templates "github.com/AIAI-Laboratory/aiai-cli/internal/template"
 )
 
 func (s *state) initCommand() *cobra.Command {
-	var name, pkg, target string
+	var name, pkg, target, componentsRaw, agentsMDRaw string
 	var dryRun, yes, force bool
-	init := &cobra.Command{Use: "init", Short: "Initialize a project", Args: cobra.NoArgs}
+	init := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize a project or Agent Setup pack (AGENTS.md, rules, skills, docs)",
+		Args:  cobra.NoArgs,
+	}
 	init.PersistentFlags().StringVar(&name, "name", "", "Project metadata name (defaults to destination basename)")
 	init.PersistentFlags().StringVar(&pkg, "package", "", "Python package name (defaults to normalized project name)")
 	init.PersistentFlags().StringVar(&target, "target", "", "Destination directory (overrides positional destination)")
+	init.PersistentFlags().StringVar(&componentsRaw, "components", "", "Comma-separated Agent Setup components (default: all)")
+	init.PersistentFlags().StringVar(&agentsMDRaw, "agents-md", "", "Existing AGENTS.md policy: append (default), replace, or skip")
 	init.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview without creating files; does not require --yes")
 	init.PersistentFlags().BoolVar(&yes, "yes", false, "Authorize generation in non-interactive mode")
-	init.PersistentFlags().BoolVar(&force, "force", false, "Replace conflicting regular files listed in the plan")
+	init.PersistentFlags().BoolVar(&force, "force", false, "Replace conflicting regular files listed in the plan (protected skills and rules are never overwritten)")
 	init.RunE = func(cmd *cobra.Command, _ []string) error {
-		return s.wizard(cmd.Context(), project.InitRequest{ProjectName: name, PackageName: pkg, TargetDir: target, Force: force}, dryRun, true)
+		agentsMode, err := scaffold.ParseExistingMode(agentsMDRaw)
+		if err != nil {
+			return fmt.Errorf("%w: %v", scaffold.ErrValidation, err)
+		}
+		comps, specified := parseComponentsFlag(componentsRaw)
+		return s.wizard(cmd.Context(), project.InitRequest{
+			ProjectName:         name,
+			PackageName:         pkg,
+			TargetDir:           target,
+			Force:               force,
+			Components:          comps,
+			ComponentsSpecified: specified,
+			IncludeAgent:        true,
+			AgentsMDMode:        agentsMode,
+		}, dryRun, true)
 	}
-	python := &cobra.Command{
-		Use:   "python [name-or-dot]",
-		Short: "Generate a minimal Python 3.13+ project",
+
+	agent := &cobra.Command{
+		Use:   "agent [target]",
+		Short: "Set up AGENTS.md, rules, skills, and GitHub Flow docs in a directory",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			agentsMode, err := scaffold.ParseExistingMode(agentsMDRaw)
+			if err != nil {
+				return fmt.Errorf("%w: %v", scaffold.ErrValidation, err)
+			}
+			comps, specified := parseComponentsFlag(componentsRaw)
+			destination := target
+			if destination == "" {
+				if len(args) > 0 {
+					destination = args[0]
+				} else {
+					destination = "."
+				}
+			}
+			req := project.InitRequest{
+				TemplateID:          templates.AgentKitID,
+				TargetDir:           destination,
+				Force:               force,
+				Components:          comps,
+				ComponentsSpecified: specified,
+				AgentsMDMode:        agentsMode,
+			}
+			return s.initialize(cmd.Context(), req, dryRun, yes, cmd.Flags().Changed("agents-md"))
+		},
+	}
+
+	var noAgent bool
+	python := &cobra.Command{
+		Use:   "python [name-or-dot]",
+		Short: "Generate a minimal Python 3.13+ project with uv, pre-commit, and optional Agent Setup",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agentsMode, err := scaffold.ParseExistingMode(agentsMDRaw)
+			if err != nil {
+				return fmt.Errorf("%w: %v", scaffold.ErrValidation, err)
+			}
+			comps, specified := parseComponentsFlag(componentsRaw)
 			if len(args) == 0 && name == "" && target == "" {
-				return s.wizard(cmd.Context(), project.InitRequest{PackageName: pkg, Force: force}, dryRun, true)
+				return s.wizard(cmd.Context(), project.InitRequest{
+					TemplateID:          templates.PythonMinimalID,
+					PackageName:         pkg,
+					Force:               force,
+					Components:          comps,
+					ComponentsSpecified: specified,
+					IncludeAgent:        !noAgent,
+					AgentsMDMode:        agentsMode,
+				}, dryRun, true)
 			}
 			projectName := name
 			destination := target
@@ -62,14 +128,42 @@ func (s *state) initCommand() *cobra.Command {
 					return err
 				}
 			}
-			return s.initialize(cmd.Context(), project.InitRequest{TemplateID: "python-minimal", ProjectName: projectName, PackageName: pkg, TargetDir: destination, Force: force}, dryRun, yes)
+			req := project.InitRequest{
+				TemplateID:          templates.PythonMinimalID,
+				ProjectName:         projectName,
+				PackageName:         pkg,
+				TargetDir:           destination,
+				Force:               force,
+				Components:          comps,
+				ComponentsSpecified: specified,
+				IncludeAgent:        !noAgent,
+				AgentsMDMode:        agentsMode,
+			}
+			return s.initialize(cmd.Context(), req, dryRun, yes, cmd.Flags().Changed("agents-md"))
 		},
 	}
-	init.AddCommand(python)
+	python.Flags().BoolVar(&noAgent, "no-agent", false, "Skip default Agent Setup files (AGENTS.md, rules, skills, and docs)")
+
+	init.AddCommand(agent, python)
 	return init
 }
 
-func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun, yes bool) error {
+func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun, yes, agentsModeExplicit bool) error {
+	var reader *bufio.Reader
+	if s.interactive() {
+		reader = bufio.NewReader(s.deps.In)
+		if !agentsModeExplicit && requestsAgentsMD(req) {
+			exists, err := scaffold.HasExistingFile(req.TargetDir, "AGENTS.md")
+			if err == nil && exists {
+				fmt.Fprintf(s.human(), "AGENTS.md already exists in %s. [A]ppend (default) / [r]eplace / [s]kip: ", req.TargetDir)
+				mode, err := promptExistingMode(ctx, reader)
+				if err != nil {
+					return err
+				}
+				req.AgentsMDMode = mode
+			}
+		}
+	}
 	s.log("planning project", "target", req.TargetDir)
 	p, err := s.deps.Planner.Plan(ctx, req)
 	if err != nil {
@@ -88,7 +182,7 @@ func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun,
 	}
 	if s.interactive() {
 		fmt.Fprint(s.human(), "\nApply this plan? [y/N] ")
-		confirmed, err := confirm(ctx, s.deps.In)
+		confirmed, err := confirmReader(ctx, reader)
 		if err != nil {
 			return err
 		}
@@ -107,21 +201,79 @@ func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun,
 	return err
 }
 
-func confirm(ctx context.Context, in io.Reader) (bool, error) {
+func parseComponentsFlag(raw string) ([]string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, false
+	}
+	parts := strings.Split(trimmed, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out, true
+}
+
+func requestsAgentsMD(req project.InitRequest) bool {
+	if req.TemplateID != templates.AgentKitID && !req.IncludeAgent {
+		return false
+	}
+	if !req.ComponentsSpecified {
+		return true
+	}
+	for _, c := range req.Components {
+		if strings.EqualFold(c, "all") || c == "agents-md" {
+			return true
+		}
+	}
+	return false
+}
+
+func readLine(ctx context.Context, r *bufio.Reader) (string, error) {
 	type answer struct {
 		line string
 		err  error
 	}
 	ch := make(chan answer, 1)
-	go func() { line, err := bufio.NewReader(in).ReadString('\n'); ch <- answer{line, err} }()
+	go func() { line, err := r.ReadString('\n'); ch <- answer{line, err} }()
 	select {
 	case <-ctx.Done():
-		return false, ctx.Err()
+		return "", ctx.Err()
 	case a := <-ch:
 		if a.err != nil && a.err != io.EOF {
-			return false, fmt.Errorf("read confirmation: %w", a.err)
+			return "", fmt.Errorf("read confirmation: %w", a.err)
 		}
-		line := strings.ToLower(strings.TrimSpace(a.line))
-		return line == "y" || line == "yes", nil
+		return strings.ToLower(strings.TrimSpace(a.line)), nil
+	}
+}
+
+func confirm(ctx context.Context, in io.Reader) (bool, error) {
+	return confirmReader(ctx, bufio.NewReader(in))
+}
+
+func confirmReader(ctx context.Context, r *bufio.Reader) (bool, error) {
+	line, err := readLine(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	return line == "y" || line == "yes", nil
+}
+
+func promptExistingMode(ctx context.Context, r *bufio.Reader) (scaffold.ExistingMode, error) {
+	line, err := readLine(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	switch line {
+	case "", "a", "append":
+		return scaffold.ExistingAppend, nil
+	case "r", "replace":
+		return scaffold.ExistingReplace, nil
+	case "s", "skip":
+		return scaffold.ExistingSkip, nil
+	default:
+		return "", fmt.Errorf("%w: invalid choice %q (expected append, replace, or skip)", scaffold.ErrValidation, line)
 	}
 }

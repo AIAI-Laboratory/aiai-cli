@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -371,7 +373,7 @@ func TestCommandPalette(t *testing.T) {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
-		for _, s := range []screen{home, selection, form, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
+		for _, s := range []screen{home, selection, form, agentSelect, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
 				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, nil, Options{NoColor: true})
@@ -842,5 +844,157 @@ func TestManualUpdateCommandFromHome(t *testing.T) {
 	m, _ = press(m, tea.KeyEscape)
 	if m.screen != home {
 		t.Fatalf("expected return to home, got %d", m.screen)
+	}
+}
+
+type capturePlanner struct {
+	got project.InitRequest
+}
+
+func (c *capturePlanner) Plan(_ context.Context, req project.InitRequest) (scaffold.Plan, error) {
+	c.got = req
+	return scaffold.Plan{
+		TemplateID:      req.TemplateID,
+		TemplateVersion: "1",
+		TargetDir:       req.TargetDir,
+		Operations: []scaffold.Operation{
+			{Path: "AGENTS.md", Action: scaffold.Append},
+			{Path: ".agents/rules/docstring.md", Action: scaffold.Protected},
+		},
+		Warnings: []string{`Protected existing rule "docstring"`},
+	}, nil
+}
+
+func TestWizardAgentSetupFlow(t *testing.T) {
+	reg, err := templates.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Existing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	planner := &capturePlanner{}
+	calls := 0
+	m := NewModel(context.Background(), planner, fakeExecutor{&calls}, reg.List(), nil, nil, Options{StartInit: true, NoColor: true})
+	defer m.cancel()
+
+	// Default first item is agent-kit.
+	if m.screen != selection || !strings.Contains(m.content(), "Agent Setup (Default)") {
+		t.Fatalf("expected Agent Setup pack first on selection screen:\n%s", m.content())
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != form || !m.isAgentTemplate() {
+		t.Fatalf("expected agent destination form, got screen=%d", m.screen)
+	}
+	m.inputs[1].SetValue(dir)
+	m.focus = 3 // Continue to resources
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != agentSelect || !m.agentsMDExists || !m.allAgentComponentsChecked() {
+		t.Fatalf("expected agentSelect with existing AGENTS.md detected and All checked")
+	}
+
+	// Toggle All off, verify Continue blocks when empty for standalone agent-kit, then toggle All back on.
+	m, _ = press(m, tea.KeySpace)
+	if m.allAgentComponentsChecked() || len(m.selectedAgentComponents()) != 0 {
+		t.Fatal("All toggle did not clear components")
+	}
+	m.agentFocus = m.agentSelectSlotCount() - 1
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != agentSelect || m.formError == "" {
+		t.Fatal("empty agent selection should warn instead of proceeding")
+	}
+	m.agentFocus = 0
+	m, _ = press(m, tea.KeySpace)
+	if !m.allAgentComponentsChecked() {
+		t.Fatal("All toggle did not restore default components")
+	}
+
+	// Uncheck one item (docs, last component) and confirm All reflects partial selection.
+	docsSlot := len(m.agentComponents())
+	m.agentFocus = docsSlot
+	m, _ = press(m, tea.KeySpace)
+	if m.allAgentComponentsChecked() || m.agentChecked["docs"] {
+		t.Fatal("unchecking docs did not update state")
+	}
+
+	// Default AGENTS.md mode must be Append; verify cycling to Replace and back to Append.
+	if m.agentsMDMode != scaffold.ExistingAppend {
+		t.Fatalf("expected default append mode, got %s", m.agentsMDMode)
+	}
+	modeSlot := len(m.agentComponents()) + 1
+	m.agentFocus = modeSlot
+	m, _ = press(m, tea.KeyRight)
+	if m.agentsMDMode != scaffold.ExistingReplace {
+		t.Fatalf("expected replace mode after Right, got %s", m.agentsMDMode)
+	}
+	m, _ = press(m, tea.KeyLeft)
+	if m.agentsMDMode != scaffold.ExistingAppend {
+		t.Fatalf("expected append mode after Left, got %s", m.agentsMDMode)
+	}
+
+	// Continue to preview.
+	m.agentFocus = m.agentSelectSlotCount() - 1
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != planning || cmd == nil {
+		t.Fatalf("expected planning screen, got %d", m.screen)
+	}
+	m, _ = runCmd(m, cmd)
+	if m.screen != preview {
+		t.Fatalf("expected preview screen, got %d", m.screen)
+	}
+	previewView := m.content()
+	if !strings.Contains(previewView, "++ append") || !strings.Contains(previewView, "⊘ protected") {
+		t.Fatalf("preview did not render append and protected badges:\n%s", previewView)
+	}
+	if planner.got.TemplateID != templates.AgentKitID || planner.got.AgentsMDMode != scaffold.ExistingAppend || !planner.got.ComponentsSpecified {
+		t.Fatalf("unexpected InitRequest: %+v", planner.got)
+	}
+}
+
+func TestWizardPythonWithAgentToggle(t *testing.T) {
+	reg, err := templates.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	planner := &capturePlanner{}
+	calls := 0
+	m := NewModel(context.Background(), planner, fakeExecutor{&calls}, reg.List(), nil, nil, Options{StartInit: true, NoColor: true})
+	defer m.cancel()
+
+	// Select second item: python-minimal.
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != form || m.isAgentTemplate() || !m.includeAgent {
+		t.Fatalf("expected python form with Agent Setup enabled by default")
+	}
+	m.inputs[0].SetValue("demo")
+	// Toggle Include Agent Setup off (slot 3) -> Continue (slot 6) skips agentSelect straight to planning.
+	m.focus = 3
+	m, _ = press(m, tea.KeySpace)
+	if m.includeAgent {
+		t.Fatal("failed to toggle Include Agent Setup off")
+	}
+	m.focus = 6
+	m, cmd := press(m, tea.KeyEnter)
+	if m.screen != planning || cmd == nil {
+		t.Fatalf("expected planning when agent setup disabled, got %d", m.screen)
+	}
+	m, _ = runCmd(m, cmd)
+	if planner.got.IncludeAgent {
+		t.Fatal("expected IncludeAgent=false when toggled off")
+	}
+
+	// Esc back to form, re-enable Agent Setup -> Continue opens agentSelect.
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != form {
+		t.Fatalf("expected Esc to return to form, got %d", m.screen)
+	}
+	m.focus = 3
+	m, _ = press(m, tea.KeySpace)
+	m.focus = 6
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != agentSelect {
+		t.Fatalf("expected agentSelect when Include Agent Setup enabled, got %d", m.screen)
 	}
 }

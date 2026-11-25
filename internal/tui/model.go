@@ -29,6 +29,7 @@ const (
 	home screen = iota
 	selection
 	form
+	agentSelect
 	planning
 	preview
 	confirmation
@@ -90,6 +91,11 @@ type Model struct {
 	previous           screen
 	cursor             int
 	focus              int
+	agentFocus         int
+	agentChecked       map[string]bool
+	includeAgent       bool
+	agentsMDExists     bool
+	agentsMDMode       scaffold.ExistingMode
 	confirmYes         bool
 	inputs             []textinput.Model
 	command            textinput.Model
@@ -243,11 +249,121 @@ func NewModel(ctx context.Context, planner project.Planner, executor scaffold.Ex
 		m.styleInput(&input)
 		m.inputs = append(m.inputs, input)
 	}
+	m.initAgentState()
 	if opts.StartInit {
 		m.screen = selection
+		for i, tmpl := range metadata {
+			if opts.Request.TemplateID != "" && tmpl.ID == opts.Request.TemplateID {
+				m.cursor = i
+				break
+			}
+		}
 	}
 	m.resize()
 	return m
+}
+
+func (m *Model) initAgentState() {
+	m.agentsMDMode = m.opts.Request.AgentsMDMode
+	if m.agentsMDMode == "" {
+		m.agentsMDMode = scaffold.ExistingAppend
+	}
+	comps := m.agentComponents()
+	m.agentChecked = make(map[string]bool, len(comps))
+	if m.opts.Request.ComponentsSpecified {
+		for _, id := range m.opts.Request.Components {
+			if strings.EqualFold(id, "all") {
+				for _, c := range comps {
+					if c.Default {
+						m.agentChecked[c.ID] = true
+					}
+				}
+				continue
+			}
+			m.agentChecked[id] = true
+		}
+	} else {
+		for _, c := range comps {
+			if c.Default {
+				m.agentChecked[c.ID] = true
+			}
+		}
+	}
+	if len(comps) == 0 {
+		m.includeAgent = false
+	} else if m.opts.StartInit && m.opts.Request.TemplateID == templates.PythonMinimalID {
+		m.includeAgent = m.opts.Request.IncludeAgent
+	} else {
+		m.includeAgent = true
+	}
+}
+
+func (m Model) selectedTemplate() templates.TemplateMetadata {
+	for _, tmpl := range m.templates {
+		if tmpl.ID == m.opts.Request.TemplateID {
+			return tmpl
+		}
+	}
+	if len(m.templates) > 0 {
+		return m.templates[0]
+	}
+	return templates.TemplateMetadata{}
+}
+
+func (m Model) isAgentTemplate() bool {
+	return m.selectedTemplate().Kind == templates.KindAgent
+}
+
+func (m Model) agentComponents() []templates.Component {
+	for _, tmpl := range m.templates {
+		if tmpl.Kind == templates.KindAgent || tmpl.ID == templates.AgentKitID {
+			return tmpl.Components
+		}
+	}
+	return nil
+}
+
+func (m Model) usesAgentSelect() bool {
+	if len(m.agentComponents()) == 0 {
+		return false
+	}
+	return m.isAgentTemplate() || m.includeAgent
+}
+
+func (m Model) allAgentComponentsChecked() bool {
+	comps := m.agentComponents()
+	if len(comps) == 0 {
+		return false
+	}
+	for _, c := range comps {
+		if c.Default && !m.agentChecked[c.ID] {
+			return false
+		}
+	}
+	return true
+}
+
+func (m Model) selectedAgentComponents() []string {
+	comps := m.agentComponents()
+	selected := make([]string, 0, len(comps))
+	for _, c := range comps {
+		if m.agentChecked[c.ID] {
+			selected = append(selected, c.ID)
+		}
+	}
+	return selected
+}
+
+func (m Model) showAgentsMDModeSelector() bool {
+	return m.agentsMDExists && m.agentChecked["agents-md"]
+}
+
+func (m Model) agentSelectSlotCount() int {
+	count := len(m.agentComponents()) + 2 // All + components + Continue
+	if m.showAgentsMDModeSelector() {
+		count++
+	}
+	return count
 }
 
 func Run(ctx context.Context, planner project.Planner, executor scaffold.Executor, metadata []templates.TemplateMetadata, authenticator auth.Authenticator, updaterService updater.Service, in io.Reader, out io.Writer, opts Options) (*scaffold.Result, *scaffold.Plan, Action, error) {

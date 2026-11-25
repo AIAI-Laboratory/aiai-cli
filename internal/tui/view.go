@@ -19,11 +19,11 @@ func (m Model) View() tea.View {
 	m.resize()
 	content := m.content()
 	m.viewport.SetContent(content)
-	if m.screen == form || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
+	if m.screen == form || m.screen == agentSelect || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
-				if m.screen == form && m.focus < 3 {
+				if m.screen == form && m.formInputForFocus(m.focus) != nil {
 					m.viewport.EnsureVisible(line+1, 0, 1)
 				}
 				break
@@ -57,14 +57,46 @@ func (m Model) content() string {
 		}
 		body = screens.TemplateSelect(items, m.cursor, t)
 	case form:
-		values := make([]string, len(m.inputs))
-		for i := range m.inputs {
-			values[i] = m.inputs[i].View()
+		agentOnly := m.isAgentTemplate()
+		var values []string
+		if agentOnly {
+			values = []string{m.inputs[1].View()}
+		} else {
+			values = make([]string, len(m.inputs))
+			for i := range m.inputs {
+				values[i] = m.inputs[i].View()
+			}
 		}
-		body = screens.InitForm(values, m.focus, m.opts.Request.Force, m.opts.DryRun, t)
+		nextLabel := "Continue to preview"
+		if m.usesAgentSelect() {
+			nextLabel = "Continue to resources"
+		}
+		body = screens.InitForm(screens.InitFormState{
+			AgentOnly:        agentOnly,
+			Inputs:           values,
+			Focus:            m.focus,
+			ShowIncludeAgent: !agentOnly && len(m.agentComponents()) > 0,
+			IncludeAgent:     m.includeAgent,
+			Force:            m.opts.Request.Force,
+			DryRun:           m.opts.DryRun,
+			NextLabel:        nextLabel,
+		}, t)
 		if m.formError != "" {
 			body = t.Accent("! "+m.formError) + "\n\n" + body
 		}
+	case agentSelect:
+		targetDir, _ := m.resolvedTargetDir()
+		body = screens.AgentSelect(screens.AgentSelectState{
+			TargetDir:      targetDir,
+			Components:     m.agentComponents(),
+			Checked:        m.agentChecked,
+			AllChecked:     m.allAgentComponentsChecked(),
+			AgentsMDExists: m.agentsMDExists,
+			ShowAgentsMode: m.showAgentsMDModeSelector(),
+			AgentsMDMode:   m.agentsMDMode,
+			Focus:          m.agentFocus,
+			Error:          m.formError,
+		}, t)
 	case planning:
 		body = m.loading("Building your preview", "Rendering the template and checking destination files.")
 	case preview:
@@ -261,7 +293,7 @@ func (m Model) toolbar() string {
 	switch m.screen {
 	case selection:
 		step = 0
-	case form, planning:
+	case form, agentSelect, planning:
 		step = 1
 	case preview, confirmation:
 		step = 2
@@ -286,6 +318,8 @@ func (m Model) footer() string {
 		}
 	case form:
 		hint = "tab next · shift+tab previous · enter continue"
+	case agentSelect:
+		hint = "↑/↓ choose · space toggle · enter select · esc back"
 	case preview:
 		hint = "↑/↓ scroll · enter continue · esc edit"
 		if m.plan.HasConflicts() {
@@ -332,6 +366,8 @@ func (m Model) footer() string {
 			hint = "↑/↓ choose · enter open · esc back"
 		case form:
 			hint = "tab next · enter continue · esc back"
+		case agentSelect:
+			hint = "↑/↓ choose · space toggle · esc back"
 		case serverList, keyList:
 			hint = "↑/↓ choose · / search · enter open · esc back"
 		case confirmation, logoutConfirmation, keyDeleteConfirmation:

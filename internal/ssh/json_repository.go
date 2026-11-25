@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -293,11 +294,23 @@ func (r *JSONRepository) ensureDirectory() error {
 
 func (r *JSONRepository) lock(ctx context.Context) (func(), error) {
 	lockPath := r.Path + ".lock"
+	permissionRetries := 0
 	for {
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_ = file.Close()
 			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		// On Windows, NTFS returns ERROR_ACCESS_DENIED while a concurrently
+		// unlinked lock file is still in delete-pending state.
+		if runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && permissionRetries < 40 {
+			permissionRetries++
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+			continue
 		}
 		if !errors.Is(err, fs.ErrExist) {
 			return nil, fmt.Errorf("%w: acquire storage lock: %v", ErrStorage, err)

@@ -6,18 +6,22 @@ import (
 	"sort"
 )
 
+// Template pairs a validated Manifest with its embedded asset filesystem.
 type Template struct {
 	Manifest Manifest
 	Files    fs.FS
 }
 
+// TemplateRegistry provides read-only lookup and ordered listing of available templates.
 type TemplateRegistry interface {
 	Get(id string) (Template, error)
 	List() []TemplateMetadata
 }
 
+// Registry stores validated templates loaded from an embedded or test filesystem.
 type Registry struct{ templates map[string]Template }
 
+// NewRegistry loads and validates every requested template ID from assets.
 func NewRegistry(assets fs.FS, ids ...string) (*Registry, error) {
 	r := &Registry{templates: make(map[string]Template)}
 	for _, id := range ids {
@@ -49,6 +53,7 @@ func NewRegistry(assets fs.FS, ids ...string) (*Registry, error) {
 	return r, nil
 }
 
+// Get returns the validated template with the given ID.
 func (r *Registry) Get(id string) (Template, error) {
 	t, ok := r.templates[id]
 	if !ok {
@@ -57,11 +62,21 @@ func (r *Registry) Get(id string) (Template, error) {
 	return t, nil
 }
 
+// List returns metadata for all registered templates ordered by DefaultOrder then ID.
 func (r *Registry) List() []TemplateMetadata {
 	items := make([]TemplateMetadata, 0, len(r.templates))
 	for _, t := range r.templates {
 		items = append(items, t.Manifest.TemplateMetadata)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	sort.Slice(items, func(i, j int) bool {
+		oi, oj := items[i].DefaultOrder, items[j].DefaultOrder
+		if oi > 0 && oj > 0 && oi != oj {
+			return oi < oj
+		}
+		if (oi > 0) != (oj > 0) {
+			return oi > 0
+		}
+		return items[i].ID < items[j].ID
+	})
 	return items
 }

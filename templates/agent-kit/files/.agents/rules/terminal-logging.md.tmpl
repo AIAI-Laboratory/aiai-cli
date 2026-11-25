@@ -1,0 +1,26 @@
+# Terminal Execution Logging Rule
+
+Whenever you run a command in the terminal (builds, tests, linters, pre-commit checks, scripts, or diagnostics), persist the command output into the repository's `.log/` directory so runs remain auditable and easy to debug.
+
+## Required Practice
+
+1. Ensure the log directory exists before writing:
+   ```bash
+   mkdir -p .log
+   ```
+2. Capture both `stdout` and `stderr` to a timestamped log file under `.log/` while preserving the command's exit status:
+   ```bash
+   set -o pipefail
+   <command> 2>&1 | tee ".log/$(date +%Y%m%d-%H%M%S)-<short-task>.log"
+   ```
+   Example:
+   ```bash
+   set -o pipefail
+   uv run pytest 2>&1 | tee ".log/$(date +%Y%m%d-%H%M%S)-pytest.log"
+   ```
+3. Use short, descriptive kebab-case task names (`pytest`, `pre-commit`, `ruff-check`, `build`).
+
+## Safety & Git Hygiene
+
+- **Never commit `.log/`**: Ensure `.log/` is present in `.gitignore` and never stage or force-add files inside `.log/`.
+- **Never log secrets**: Do not print API keys, access tokens, passwords, or private keys into terminal output or `.log/` files.

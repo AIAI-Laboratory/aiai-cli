@@ -1,7 +1,15 @@
 id: python-minimal
 version: "1"
+kind: project
+default_order: 2
 display_name: Minimal Python Project
-description: Python 3.13 project using uv, Ruff, Pyright, Pytest, and Husky
+description: Python 3.13 project using uv, Ruff, Pyright, Pytest, and pre-commit
+next_steps:
+  - git init
+  - uv lock
+  - uv sync
+  - uv run pre-commit install
+next_steps_note: Commit uv.lock before pushing.
 variables:
   - project_name
   - package_name
@@ -14,17 +22,12 @@ files:
     destination: .github/dependabot.yml
   - source: .github/workflows/ci.yml.tmpl
     destination: .github/workflows/ci.yml
-  - source: .husky/pre-commit.tmpl
-    destination: .husky/pre-commit
-    executable: true
   - source: .gitignore.tmpl
     destination: .gitignore
+  - source: .pre-commit-config.yaml.tmpl
+    destination: .pre-commit-config.yaml
   - source: .python-version.tmpl
     destination: .python-version
-  - source: package.json.tmpl
-    destination: package.json
-  - source: pnpm-workspace.yaml.tmpl
-    destination: pnpm-workspace.yaml
   - source: pyproject.toml.tmpl
     destination: pyproject.toml
   - source: README.md.tmpl
