@@ -64,6 +64,19 @@ func TestGitMenuCategoriesAndReturningFromAnAction(t *testing.T) {
 	if m.dialog.kind != "" {
 		t.Fatal("root menu did not close")
 	}
+
+	// Left inside root/category menu does not close/back under strict semantic rules; q closes when not filtering.
+	next, _ = m.openGitDialog("menu", "")
+	m = next.(Model)
+	m.dialog.category = "Sync"
+	m, _ = actionKey(m, tea.KeyLeft)
+	if m.dialog.kind != "menu" || m.dialog.category != "Sync" {
+		t.Fatal("Left inside git menu should not navigate back")
+	}
+	m, _ = press(m, 'q')
+	if m.dialog.kind != "menu" || m.dialog.category != "" {
+		t.Fatal("q inside git menu did not navigate back")
+	}
 }
 
 func TestGitMenuSearchFindsActionsAcrossCategories(t *testing.T) {

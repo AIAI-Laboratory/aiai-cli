@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	gitlocal "github.com/AIAI-Laboratory/aiai-cli/internal/git"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/keys"
 )
 
 type gitDialog struct {
@@ -194,9 +195,10 @@ func (m Model) gitShortcut(key string) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyPressMsg); ok {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		key := keyMsg.String()
 		if m.dialog.kind == "native-confirm" {
-			switch key.String() {
+			switch key {
 			case "up", "pgup":
 				m.dialog.offset = max(0, m.dialog.offset-1)
 				return m, nil
@@ -205,8 +207,8 @@ func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		switch key.String() {
-		case "esc":
+		switch {
+		case keys.IsBack(key, !m.dialogHasInput()):
 			if m.dialog.kind == "menu" && m.dialog.filtering {
 				m.dialog.filtering = false
 				m.dialog.cursor = 0
@@ -226,7 +228,7 @@ func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, textinput.Blink
 			}
 			return m.returnToGitMenu(), nil
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.loading {
 				return m, nil
 			}
@@ -291,22 +293,20 @@ func (m Model) updateGitDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			last := max(0, len(m.gitMenuItems())-1)
-			switch key.String() {
-			case "up", "k":
+			switch {
+			case keys.IsUp(key):
 				m.dialog.cursor = max(0, m.dialog.cursor-1)
-			case "down", "j":
+			case keys.IsDown(key):
 				m.dialog.cursor = min(last, m.dialog.cursor+1)
-			case "pgup":
+			case key == "pgup":
 				m.dialog.cursor = max(0, m.dialog.cursor-max(1, m.bodyHeight()-2))
-			case "pgdown":
+			case key == "pgdown":
 				m.dialog.cursor = min(last, m.dialog.cursor+max(1, m.bodyHeight()-2))
-			case "home":
+			case key == "home":
 				m.dialog.cursor = 0
-			case "end":
+			case key == "end":
 				m.dialog.cursor = last
-			case "left":
-				return m.gitMenuBack(), nil
-			case "/":
+			case key == "/":
 				m.dialog.filtering = true
 				m.gitInput.Placeholder = "Find Git action"
 				m.gitInput.Focus()

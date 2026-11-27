@@ -19,7 +19,8 @@ func (m Model) View() tea.View {
 	m.resize()
 	content := m.content()
 	m.viewport.SetContent(content)
-	if m.screen == form || m.screen == agentSelect || m.screen == home || m.screen == selection || m.screen == confirmation || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
+	previewScrollFocus := m.screen == preview && m.plan != nil && m.plan.RequiresConfirmation() && !m.opts.DryRun
+	if m.screen == form || m.screen == agentSelect || m.screen == home || m.screen == selection || previewScrollFocus || m.screen == updatePrompt || m.screen == updateResult || m.screen == serverList || m.screen == keyList || m.screen == keyDeleteConfirmation {
 		for line, text := range strings.Split(content, "\n") {
 			if strings.Contains(text, "> ") {
 				m.viewport.EnsureVisible(line, 0, 1)
@@ -86,8 +87,15 @@ func (m Model) content() string {
 		}
 	case agentSelect:
 		targetDir, _ := m.resolvedTargetDir()
+		destView := ""
+		if len(m.inputs) > 1 {
+			destView = m.inputs[1].View()
+		}
 		body = screens.AgentSelect(screens.AgentSelectState{
+			AgentOnly:      m.isAgentTemplate(),
 			TargetDir:      targetDir,
+			EditingDest:    m.editingDest,
+			DestInput:      destView,
 			Components:     m.agentComponents(),
 			Checked:        m.agentChecked,
 			AllChecked:     m.allAgentComponentsChecked(),
@@ -100,10 +108,7 @@ func (m Model) content() string {
 	case planning:
 		body = m.loading("Building your preview", "Rendering the template and checking destination files.")
 	case preview:
-		body = screens.Preview(*m.plan, m.opts.DryRun, t)
-	case confirmation:
-		body = t.Heading("Ready to create?", "Apply the file operations you just reviewed.") + t.Muted(m.plan.TargetDir) + "\n\n" +
-			t.Choice("No, return to preview", "", !m.confirmYes) + t.Choice("Yes, generate files", "", m.confirmYes)
+		body = screens.Preview(*m.plan, m.confirmCursor, m.opts.DryRun, t)
 	case applying:
 		body = m.loading("Creating your project", "Writing files from the approved plan.")
 		if m.canceling {
@@ -295,10 +300,8 @@ func (m Model) toolbar() string {
 		step = 0
 	case form, agentSelect, planning:
 		step = 1
-	case preview, confirmation:
+	case preview, applying, result:
 		step = 2
-	case applying, result:
-		step = 3
 	}
 	if step >= 0 {
 		return t.Step(step) + "\n"
@@ -316,19 +319,31 @@ func (m Model) footer() string {
 		} else {
 			hint = "↑/↓ choose · enter select · tab complete"
 		}
+	case selection:
+		hint = "↑/↓ choose · enter next · esc back"
 	case form:
-		hint = "tab next · shift+tab previous · enter continue"
+		hint = "tab field · space toggle · enter next · esc back"
 	case agentSelect:
-		hint = "↑/↓ choose · space toggle · enter select · esc back"
-	case preview:
-		hint = "↑/↓ scroll · enter continue · esc edit"
-		if m.plan.HasConflicts() {
-			hint = "↑/↓ scroll · esc edit options"
+		if m.editingDest {
+			hint = "enter/tab confirm destination · esc cancel"
+		} else if m.isAgentTemplate() {
+			hint = "↑/↓ move · space toggle · a all · tab/d dest · enter create · esc back"
+		} else {
+			hint = "↑/↓ move · space toggle · a all · enter create · esc back"
 		}
-	case confirmation:
-		hint = "←/→ choose · enter confirm · esc preview"
+	case preview:
+		switch {
+		case m.opts.DryRun && m.plan != nil && m.plan.HasConflicts():
+			hint = "↑/↓ scroll · esc back"
+		case m.opts.DryRun:
+			hint = "↑/↓ scroll · enter finish · esc back"
+		case m.plan != nil && m.plan.RequiresConfirmation():
+			hint = "↑/↓ choose · enter confirm · esc back"
+		default:
+			hint = "↑/↓ scroll · enter create · esc back"
+		}
 	case result:
-		hint = "↑/↓ scroll · enter finish"
+		hint = "↑/↓ scroll · enter/esc finish"
 	case help, about:
 		hint = "↑/↓ scroll · esc back"
 	case authWaiting:
@@ -336,7 +351,7 @@ func (m Model) footer() string {
 	case authResult, profile:
 		hint = "enter or esc back"
 	case logoutConfirmation:
-		hint = "←/→ choose · enter confirm · esc back"
+		hint = "↑/↓ choose · enter confirm · esc back"
 	case updatePrompt:
 		hint = "↑/↓ choose · enter confirm · esc back"
 	case updateResult:
@@ -344,7 +359,7 @@ func (m Model) footer() string {
 	case keyDetail:
 		hint = "c copy public key · d delete managed key · esc back"
 	case keyDeleteConfirmation:
-		hint = "←/→ choose · enter confirm · esc back"
+		hint = "↑/↓ choose · enter confirm · esc back"
 	case serverList:
 		if m.serverConnect {
 			hint = "↑/↓ choose · / search · enter connect · esc back"
@@ -367,11 +382,14 @@ func (m Model) footer() string {
 		case form:
 			hint = "tab next · enter continue · esc back"
 		case agentSelect:
-			hint = "↑/↓ choose · space toggle · esc back"
+			hint = "↑/↓ · space toggle · enter create · esc back"
+			if m.editingDest {
+				hint = "enter/tab confirm · esc cancel"
+			}
 		case serverList, keyList:
 			hint = "↑/↓ choose · / search · enter open · esc back"
-		case confirmation, logoutConfirmation, keyDeleteConfirmation:
-			hint = "←/→ choose · enter confirm · esc back"
+		case logoutConfirmation, keyDeleteConfirmation:
+			hint = "↑/↓ choose · enter confirm · esc back"
 		case keyDetail:
 			hint = "c copy · d delete · esc back"
 		case planning, applying, authStarting, loggingOut, updating, serverLoading, logLoading, keyLoading:

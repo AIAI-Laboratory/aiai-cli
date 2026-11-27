@@ -81,7 +81,7 @@ func truncate(text string, width int) string {
 }
 
 func (t Theme) Step(current int) string {
-	steps := []string{"Template", "Configure", "Preview", "Create"}
+	steps := []string{"Select Template", "Configure", "Create"}
 	for i, step := range steps {
 		label := fmt.Sprintf("%d %s", i+1, step)
 		if t.width < 52 && i != current {

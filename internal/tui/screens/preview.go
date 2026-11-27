@@ -7,10 +7,20 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 )
 
-// Preview renders the pre-apply file operation summary, list, and warnings.
-func Preview(p scaffold.Plan, dryRun bool, t Theme) string {
+// Preview renders the Step 3 Create review screen with file operations, warnings,
+// and inline conflict/overwrite resolution options when confirmation is required.
+func Preview(p scaffold.Plan, confirmCursor int, dryRun bool, t Theme) string {
 	var s strings.Builder
-	s.WriteString(t.Heading("Review your plan", p.TemplateID+" v"+p.TemplateVersion))
+	title := "Review & create"
+	switch {
+	case dryRun:
+		title = "Preview your plan"
+	case p.HasConflicts():
+		title = "Resolve conflicts & create"
+	case p.HasOverwrites():
+		title = "Confirm overwrites & create"
+	}
+	s.WriteString(t.Heading(title, p.TemplateID+" v"+p.TemplateVersion))
 	s.WriteString(t.Muted("Destination  ") + t.Truncate(p.TargetDir, max(1, t.Width()-14)) + "\n\n")
 	counts := make(map[scaffold.Action]int)
 	for _, op := range p.Operations {
@@ -58,12 +68,28 @@ func Preview(p scaffold.Plan, dryRun bool, t Theme) string {
 	for _, warning := range p.Warnings {
 		s.WriteString("\n" + t.Warn("! "+t.Truncate(warning, max(1, t.Width()-2))) + "\n")
 	}
-	if p.HasConflicts() {
-		s.WriteString("\n" + t.Accent("Conflicts block generation.") + " Esc to edit options.\n")
-	} else if dryRun {
-		s.WriteString("\n" + t.Muted("Preview only. No files written. Enter to finish.") + "\n")
-	} else {
-		s.WriteString("\n" + t.Muted("Enter to review the final confirmation.") + "\n")
+	if dryRun {
+		if p.HasConflicts() {
+			s.WriteString("\n" + t.Accent("Conflicts detected. Preview only; no files written.") + " Esc to back.\n")
+		} else {
+			s.WriteString("\n" + t.Muted("Preview only. No files written. Enter to finish.") + "\n")
+		}
+		return s.String()
 	}
+	if p.RequiresConfirmation() {
+		s.WriteString("\n")
+		conflicts := p.ConflictCount()
+		overwrites := p.OverwriteCount()
+		if conflicts > 0 {
+			s.WriteString(t.Choice("Keep existing", fmt.Sprintf("Skip %d conflicting file(s) and create the rest", conflicts), confirmCursor == 0))
+			s.WriteString(t.Choice("Overwrite", fmt.Sprintf("Replace %d conflicting file(s); skills/rules stay protected", conflicts), confirmCursor == 1))
+		} else {
+			s.WriteString(t.Choice("Overwrite", fmt.Sprintf("Replace %d existing file(s) as planned", overwrites), confirmCursor == 0))
+			s.WriteString(t.Choice("Keep existing", fmt.Sprintf("Skip %d overwrite(s) and keep current files", overwrites), confirmCursor == 1))
+		}
+		s.WriteString(t.Choice("Back to configure", "Return to edit options without writing", confirmCursor == 2))
+		return s.String()
+	}
+	s.WriteString("\n" + t.Muted("No conflicts. Enter to create · Esc to back.") + "\n")
 	return s.String()
 }

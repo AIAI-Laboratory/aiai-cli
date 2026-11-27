@@ -152,7 +152,7 @@ func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun,
 	var reader *bufio.Reader
 	if s.interactive() {
 		reader = bufio.NewReader(s.deps.In)
-		if !agentsModeExplicit && requestsAgentsMD(req) {
+		if !yes && !agentsModeExplicit && requestsAgentsMD(req) {
 			exists, err := scaffold.HasExistingFile(req.TargetDir, "AGENTS.md")
 			if err == nil && exists {
 				fmt.Fprintf(s.human(), "AGENTS.md already exists in %s. [A]ppend (default) / [r]eplace / [s]kip: ", req.TargetDir)
@@ -173,24 +173,42 @@ func (s *state) initialize(ctx context.Context, req project.InitRequest, dryRun,
 	if !s.json || s.interactive() {
 		fmt.Fprint(s.human(), output.PlanText(p))
 	}
-	if p.HasConflicts() {
-		return fmt.Errorf("%w: existing files differ; inspect the preview and use --force to replace them", scaffold.ErrConflict)
-	}
 	if dryRun {
+		if p.HasConflicts() {
+			return fmt.Errorf("%w: existing files differ; inspect the preview and use --force to replace them", scaffold.ErrConflict)
+		}
 		s.status = "planned"
 		return nil
 	}
-	if s.interactive() {
-		fmt.Fprint(s.human(), "\nApply this plan? [y/N] ")
-		confirmed, err := confirmReader(ctx, reader)
-		if err != nil {
-			return err
+	if !s.interactive() {
+		if p.HasConflicts() {
+			return fmt.Errorf("%w: existing files differ; inspect the preview and use --force to replace them", scaffold.ErrConflict)
 		}
-		if !confirmed {
-			return context.Canceled
+		if !yes {
+			return fmt.Errorf("non-interactive generation requires --yes; use --dry-run to preview")
 		}
 	} else if !yes {
-		return fmt.Errorf("non-interactive generation requires --yes; use --dry-run to preview")
+		switch {
+		case p.HasConflicts():
+			fmt.Fprint(s.human(), "\nConflicting files exist. [S]kip conflicts (default) / [r]eplace conflicts / [c]ancel: ")
+			replace, err := promptConflictResolution(ctx, reader)
+			if err != nil {
+				return err
+			}
+			p = p.ResolveExisting(replace)
+			s.plan = &p
+		case p.HasOverwrites():
+			fmt.Fprint(s.human(), "\nReplace existing files listed above? [y/N] ")
+			confirmed, err := confirmReader(ctx, reader)
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return context.Canceled
+			}
+		}
+	} else if p.HasConflicts() {
+		return fmt.Errorf("%w: existing files differ; inspect the preview and use --force to replace them", scaffold.ErrConflict)
 	}
 	s.log("applying project plan", "files", len(p.Operations))
 	r, err := s.deps.Executor.Apply(ctx, p)
@@ -232,6 +250,11 @@ func requestsAgentsMD(req project.InitRequest) bool {
 }
 
 func readLine(ctx context.Context, r *bufio.Reader) (string, error) {
+	line, _, err := readLineEOF(ctx, r)
+	return line, err
+}
+
+func readLineEOF(ctx context.Context, r *bufio.Reader) (string, bool, error) {
 	type answer struct {
 		line string
 		err  error
@@ -240,12 +263,13 @@ func readLine(ctx context.Context, r *bufio.Reader) (string, error) {
 	go func() { line, err := r.ReadString('\n'); ch <- answer{line, err} }()
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", false, ctx.Err()
 	case a := <-ch:
 		if a.err != nil && a.err != io.EOF {
-			return "", fmt.Errorf("read confirmation: %w", a.err)
+			return "", false, fmt.Errorf("read confirmation: %w", a.err)
 		}
-		return strings.ToLower(strings.TrimSpace(a.line)), nil
+		trimmed := strings.ToLower(strings.TrimSpace(a.line))
+		return trimmed, a.err == io.EOF && trimmed == "", nil
 	}
 }
 
@@ -275,5 +299,25 @@ func promptExistingMode(ctx context.Context, r *bufio.Reader) (scaffold.Existing
 		return scaffold.ExistingSkip, nil
 	default:
 		return "", fmt.Errorf("%w: invalid choice %q (expected append, replace, or skip)", scaffold.ErrValidation, line)
+	}
+}
+
+func promptConflictResolution(ctx context.Context, r *bufio.Reader) (bool, error) {
+	line, eof, err := readLineEOF(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	if eof {
+		return false, context.Canceled
+	}
+	switch line {
+	case "", "s", "skip":
+		return false, nil
+	case "r", "replace":
+		return true, nil
+	case "c", "cancel":
+		return false, context.Canceled
+	default:
+		return false, fmt.Errorf("%w: invalid choice %q (expected skip, replace, or cancel)", scaffold.ErrValidation, line)
 	}
 }

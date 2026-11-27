@@ -98,8 +98,28 @@ func TestFocusTimerIsLargeAndCentered(t *testing.T) {
 	now := time.Now()
 	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), Repo: &memoryRepo{}, NoColor: true, Width: 80, Height: 24, Now: func() time.Time { return now }})
 	view := m.View().Content
-	if !strings.Contains(view, "━━━━━┓") || strings.ContainsAny(view, "═║╔╗╚╝") || !strings.Contains(view, "●") || !strings.Contains(view, "SESSION 1 OF 4") || !strings.Contains(view, "░") || !strings.Contains(view, "%") {
+	if !strings.Contains(view, "═════╗") || strings.ContainsAny(view, "━┃") || !strings.Contains(view, "●") || !strings.Contains(view, "SESSION 1 OF 4") || !strings.Contains(view, "░") || !strings.Contains(view, "%") {
 		t.Fatalf("large timer is missing: %q", view)
+	}
+}
+
+func TestLargeTimerDigitsDoubleBoxDrawing(t *testing.T) {
+	for d := '0'; d <= '9'; d++ {
+		rendered := largeTimer(string(d))
+		lines := strings.Split(rendered, "\n")
+		if len(lines) != 7 {
+			t.Fatalf("digit %c has %d lines, want 7", d, len(lines))
+		}
+		for _, line := range lines {
+			if len([]rune(line)) != 6 {
+				t.Fatalf("digit %c line %q has rune len %d, want 6", d, line, len([]rune(line)))
+			}
+			for _, r := range line {
+				if r != ' ' && !strings.ContainsRune("╗╚╠╝╣╦║═╔╩╬", r) {
+					t.Fatalf("digit %c line %q contains unexpected character %c", d, line, r)
+				}
+			}
+		}
 	}
 }
 
@@ -222,7 +242,7 @@ func TestProjectFocusKeepsControlsVisible(t *testing.T) {
 		for _, message := range []string{"", "2m active · 0 new reachable commits observed\nHEAD abcdef01 → abcdef01"} {
 			m.message = message
 			view := m.View().Content
-			if !strings.Contains(view, "q end") || lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
+			if !strings.Contains(view, "esc end") || lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
 				t.Fatalf("%dx%d controls clipped: %q", size[0], size[1], view)
 			}
 		}
@@ -282,5 +302,38 @@ func TestStatisticsScrollsWithoutAffectingTimer(t *testing.T) {
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if next.(Model).screen != focusScreen {
 		t.Fatal("stats did not return to focus")
+	}
+}
+
+func TestExitConfirmIsVerticalAndIgnoresLeftRight(t *testing.T) {
+	now := time.Now()
+	m := NewModel(context.Background(), Options{Mode: StartFocus, Config: zenmodel.DefaultConfig(), NoColor: true, Now: func() time.Time { return now }})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(Model)
+	if m.screen != exitConfirm || m.cursor != 0 {
+		t.Fatalf("expected exitConfirm defaulting to Keep focusing, got screen=%d cursor=%d", m.screen, m.cursor)
+	}
+	view := m.View().Content
+	keepIdx := strings.Index(view, "> Keep focusing")
+	endIdx := strings.Index(view, "  End session")
+	if keepIdx < 0 || endIdx < 0 || keepIdx >= endIdx || !strings.Contains(view[keepIdx:endIdx], "\n") {
+		t.Fatalf("expected vertical exitConfirm choices:\n%s", view)
+	}
+	for _, k := range []rune{tea.KeyLeft, tea.KeyRight, 'h', 'l'} {
+		next, _ = m.Update(tea.KeyPressMsg{Code: k})
+		m = next.(Model)
+		if m.cursor != 0 {
+			t.Fatalf("horizontal key %v changed exitConfirm selection", k)
+		}
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = next.(Model)
+	if m.cursor != 1 {
+		t.Fatal("Down did not move to End session")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	m = next.(Model)
+	if m.screen != focusScreen || m.cursor != 0 {
+		t.Fatalf("q on exitConfirm did not cancel safely: screen=%d cursor=%d", m.screen, m.cursor)
 	}
 }

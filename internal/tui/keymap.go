@@ -10,6 +10,7 @@ import (
 	"github.com/AIAI-Laboratory/aiai-cli/internal/auth"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/scaffold"
 	sshmanager "github.com/AIAI-Laboratory/aiai-cli/internal/ssh"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/keys"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/screens"
 )
 
@@ -110,7 +111,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	textEditing := m.screen == home || (m.screen == form && m.formInputForFocus(m.focus) != nil)
+	textEditing := m.screen == home || (m.screen == form && m.formInputForFocus(m.focus) != nil) || (m.screen == agentSelect && m.editingDest)
 	if key == "?" && !textEditing {
 		if m.screen == help {
 			m.screen = m.previous
@@ -121,7 +122,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoTop()
 		return m, nil
 	}
-	if key == "esc" {
+	if keys.IsBack(key, !textEditing) {
 		switch m.screen {
 		case home:
 			if m.command.Value() != "" {
@@ -142,7 +143,16 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case form:
 			m.screen, m.cursor = selection, 0
 		case agentSelect:
+			if m.editingDest {
+				m.finishDestEdit()
+				return m, nil
+			}
 			m.formError = ""
+			if m.isAgentTemplate() {
+				m.screen = selection
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			m.screen = form
 			return m, m.setFocus(m.focus)
 		case preview:
@@ -153,13 +163,14 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.screen = form
 			return m, m.setFocus(m.focus)
-		case confirmation:
-			m.screen = preview
 		case help:
 			m.screen = m.previous
 		case about:
 			m.screen, m.cursor = home, 0
-		case authStarting, authWaiting, authResult, profile, logoutConfirmation, updatePrompt, updateResult, serverLoading, logLoading, accessLogs, sshFailure, keyLoading:
+		case authStarting, authWaiting, authResult, profile, updatePrompt, updateResult, serverLoading, logLoading, accessLogs, sshFailure, keyLoading:
+			m.screen, m.cursor = home, 0
+		case logoutConfirmation:
+			m.logoutYes = false
 			m.screen, m.cursor = home, 0
 		case serverList:
 			if m.search.Value() != "" {
@@ -195,41 +206,32 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if count == 0 {
 			return m, nil
 		}
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
 			m.cursor = (m.cursor + count - 1) % count
-		case "down", "j":
+		case keys.IsDown(key), keys.IsNext(key):
 			m.cursor = (m.cursor + 1) % count
-		case "enter":
+		case keys.IsConfirm(key):
 			m.opts.Request.TemplateID = m.templates[m.cursor].ID
 			m.formError = ""
+			if m.isAgentTemplate() {
+				return m.enterAgentSelect()
+			}
 			m.screen = form
 			return m, m.setFocus(0)
 		}
 	case form:
-		switch key {
-		case "tab", "down":
+		switch {
+		case keys.IsNext(key), key == "down":
 			return m, m.setFocus(m.focus + 1)
-		case "shift+tab", "up":
+		case keys.IsPrev(key), key == "up":
 			return m, m.setFocus(m.focus - 1)
-		case "enter":
-			switch m.formOptionKind(m.focus) {
-			case "input":
-				return m, m.setFocus(m.focus + 1)
-			case "include_agent":
-				m.includeAgent = !m.includeAgent
-			case "force":
-				m.opts.Request.Force = !m.opts.Request.Force
-			case "dry_run":
-				m.opts.DryRun = !m.opts.DryRun
-			case "continue":
-				if m.usesAgentSelect() {
-					return m.enterAgentSelect()
-				}
-				return m.prepare()
+		case keys.IsConfirm(key):
+			if m.usesAgentSelect() {
+				return m.enterAgentSelect()
 			}
-			return m, nil
-		case "space":
+			return m.prepare()
+		case keys.IsToggle(key):
 			switch m.formOptionKind(m.focus) {
 			case "include_agent":
 				m.includeAgent = !m.includeAgent
@@ -248,41 +250,64 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case agentSelect:
-		return m.agentSelectKey(key)
+		return m.agentSelectKey(msg)
 	case preview:
-		if key == "enter" && !m.plan.HasConflicts() {
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
+			if !m.opts.DryRun && m.plan != nil && m.plan.RequiresConfirmation() {
+				m.confirmCursor = (m.confirmCursor + 2) % 3
+				return m, nil
+			}
+		case keys.IsDown(key), keys.IsNext(key):
+			if !m.opts.DryRun && m.plan != nil && m.plan.RequiresConfirmation() {
+				m.confirmCursor = (m.confirmCursor + 1) % 3
+				return m, nil
+			}
+		case keys.IsConfirm(key):
 			if m.opts.DryRun {
+				if m.plan.HasConflicts() {
+					return m, nil
+				}
 				return m, tea.Quit
 			}
-			m.screen, m.confirmYes = confirmation, false
-			return m, nil
-		}
-	case confirmation:
-		switch key {
-		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
-			m.confirmYes = !m.confirmYes
-		case "enter":
-			if !m.confirmYes {
-				m.screen = preview
-				return m, nil
+			if m.plan.RequiresConfirmation() {
+				if m.confirmCursor == 2 {
+					if m.usesAgentSelect() {
+						m.screen = agentSelect
+						m.viewport.GotoTop()
+						return m, nil
+					}
+					m.screen = form
+					return m, m.setFocus(m.focus)
+				}
+				var replace bool
+				if m.plan.HasConflicts() {
+					replace = m.confirmCursor == 1
+				} else {
+					replace = m.confirmCursor == 0
+				}
+				resolved := m.plan.ResolveExisting(replace)
+				m.plan = &resolved
+				m.screen = applying
+				return m, m.withProgress(func() tea.Msg { r, err := m.executor.Apply(m.ctx, resolved); return appliedMsg{r, err} })
 			}
 			m.screen = applying
 			plan := *m.plan
 			return m, m.withProgress(func() tea.Msg { r, err := m.executor.Apply(m.ctx, plan); return appliedMsg{r, err} })
 		}
 	case result:
-		if key == "enter" {
+		if keys.IsConfirm(key) {
 			return m, tea.Quit
 		}
 	case authResult, profile:
-		if key == "enter" {
+		if keys.IsConfirm(key) {
 			m.screen, m.cursor = home, 0
 		}
 	case logoutConfirmation:
-		switch key {
-		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
+		switch {
+		case keys.IsUp(key), keys.IsDown(key), keys.IsNext(key), keys.IsPrev(key):
 			m.logoutYes = !m.logoutYes
-		case "enter":
+		case keys.IsConfirm(key):
 			if !m.logoutYes {
 				m.screen = home
 				return m, nil
@@ -294,12 +319,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			})
 		}
 	case updatePrompt:
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
 			m.cursor = (m.cursor + 2) % 3
-		case "down", "j", "tab":
+		case keys.IsDown(key), keys.IsNext(key):
 			m.cursor = (m.cursor + 1) % 3
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.updateRelease == nil {
 				m.screen, m.cursor = home, 0
 				return m, nil
@@ -327,10 +352,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case updateResult:
 		if m.updateResultOK {
-			switch key {
-			case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
+			switch {
+			case keys.IsUp(key), keys.IsDown(key), keys.IsNext(key), keys.IsPrev(key):
 				m.updateResultCursor = (m.updateResultCursor + 1) % 2
-			case "enter":
+			case keys.IsConfirm(key):
 				if m.updateResultCursor == 0 {
 					if m.updater != nil {
 						_ = m.updater.Restart()
@@ -339,10 +364,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				}
 				return m, tea.Quit
 			}
-		} else {
-			if key == "enter" {
-				m.screen, m.cursor = home, 0
-			}
+		} else if keys.IsConfirm(key) {
+			m.screen, m.cursor = home, 0
 		}
 	case serverList:
 		servers := m.visibleServers()
@@ -354,12 +377,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if count == 0 {
 			return m, nil
 		}
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key):
 			m.cursor = (m.cursor + count - 1) % count
-		case "down", "j":
+		case keys.IsDown(key):
 			m.cursor = (m.cursor + 1) % count
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.serverConnect {
 				m.sshAlias = servers[m.cursor].Alias
 				return m, tea.Quit
@@ -368,7 +391,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoTop()
 		}
 	case serverDetail, sshFailure:
-		if key == "enter" {
+		if keys.IsConfirm(key) {
 			if m.screen == serverDetail {
 				m.screen = serverList
 			} else {
@@ -379,8 +402,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case keyList:
-		keys := m.visibleKeys()
-		count := len(keys)
+		listKeys := m.visibleKeys()
+		count := len(listKeys)
 		if key == "/" {
 			m.searching = true
 			return m, m.search.Focus()
@@ -388,22 +411,22 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if count == 0 {
 			return m, nil
 		}
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key):
 			m.cursor = (m.cursor + count - 1) % count
-		case "down", "j":
+		case keys.IsDown(key):
 			m.cursor = (m.cursor + 1) % count
-		case "enter":
+		case keys.IsConfirm(key):
 			m.keyNotice = ""
 			m.screen = keyDetail
 			m.viewport.GotoTop()
 		}
 	case keyDetail:
-		keys := m.visibleKeys()
-		if len(keys) == 0 {
+		listKeys := m.visibleKeys()
+		if len(listKeys) == 0 {
 			return m, nil
 		}
-		selected := keys[m.cursor]
+		selected := listKeys[m.cursor]
 		switch key {
 		case "c":
 			m.keyNotice = "Copying public key…"
@@ -423,10 +446,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen = keyList
 		}
 	case keyDeleteConfirmation:
-		switch key {
-		case "up", "down", "left", "right", "j", "k", "h", "l", "tab":
+		switch {
+		case keys.IsUp(key), keys.IsDown(key), keys.IsNext(key), keys.IsPrev(key):
 			m.keyDeleteYes = !m.keyDeleteYes
-		case "enter":
+		case keys.IsConfirm(key):
 			if !m.keyDeleteYes {
 				m.screen = keyDetail
 				return m, nil
@@ -450,33 +473,55 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) agentSelectKey(key string) (tea.Model, tea.Cmd) {
+func (m Model) agentSelectKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if m.editingDest && len(m.inputs) > 1 {
+		switch key {
+		case "enter", "tab":
+			m.finishDestEdit()
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.inputs[1], cmd = m.inputs[1].Update(msg)
+			return m, cmd
+		}
+	}
 	comps := m.agentComponents()
 	slots := m.agentSelectSlotCount()
 	showMode := m.showAgentsMDModeSelector()
 	modeSlot := len(comps) + 1
-	continueSlot := len(comps) + 1
-	if showMode {
-		continueSlot++
-	}
-	switch key {
-	case "up", "k", "shift+tab":
+	switch {
+	case key == "tab" || key == "d":
+		if m.isAgentTemplate() && len(m.inputs) > 1 {
+			m.editingDest = true
+			m.formError = ""
+			return m, m.inputs[1].Focus()
+		}
+		if key == "tab" {
+			m.agentFocus = (m.agentFocus + 1) % slots
+		}
+		return m, nil
+	case keys.IsUp(key), keys.IsPrev(key):
 		m.agentFocus = (m.agentFocus + slots - 1) % slots
 		return m, nil
-	case "down", "j", "tab":
+	case keys.IsDown(key):
 		m.agentFocus = (m.agentFocus + 1) % slots
 		return m, nil
-	case "left", "h":
+	case keys.IsLeft(key):
 		if showMode && m.agentFocus == modeSlot {
 			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, -1)
 		}
 		return m, nil
-	case "right", "l":
+	case keys.IsRight(key):
 		if showMode && m.agentFocus == modeSlot {
 			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, 1)
 		}
 		return m, nil
-	case "space":
+	case key == "a":
+		m.toggleAllAgentComponents()
+		m.formError = ""
+		return m, nil
+	case keys.IsToggle(key):
 		if m.agentFocus == 0 {
 			m.toggleAllAgentComponents()
 		} else if m.agentFocus >= 1 && m.agentFocus <= len(comps) {
@@ -488,30 +533,12 @@ func (m Model) agentSelectKey(key string) (tea.Model, tea.Cmd) {
 		}
 		m.formError = ""
 		return m, nil
-	case "enter":
-		if m.agentFocus == 0 {
-			m.toggleAllAgentComponents()
-			m.formError = ""
+	case keys.IsConfirm(key):
+		if m.isAgentTemplate() && len(m.selectedAgentComponents()) == 0 {
+			m.formError = "Select at least one resource."
 			return m, nil
 		}
-		if m.agentFocus >= 1 && m.agentFocus <= len(comps) {
-			id := comps[m.agentFocus-1].ID
-			m.agentChecked[id] = !m.agentChecked[id]
-			m.clampAgentFocus()
-			m.formError = ""
-			return m, nil
-		}
-		if showMode && m.agentFocus == modeSlot {
-			m.agentsMDMode = cycleExistingMode(m.agentsMDMode, 1)
-			return m, nil
-		}
-		if m.agentFocus == continueSlot {
-			if m.isAgentTemplate() && len(m.selectedAgentComponents()) == 0 {
-				m.formError = "Select at least one resource."
-				return m, nil
-			}
-			return m.prepare()
-		}
+		return m.prepare()
 	}
 	return m, nil
 }

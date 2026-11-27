@@ -38,6 +38,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.formError = msg.err.Error()
+			if m.isAgentTemplate() {
+				m.screen = agentSelect
+				return m, nil
+			}
 			if m.usesAgentSelect() && strings.Contains(msg.err.Error(), "component") {
 				m.screen = agentSelect
 				return m, nil
@@ -46,6 +50,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setFocus(m.focus)
 		}
 		m.plan = &msg.plan
+		m.confirmCursor = 0
 		m.screen = preview
 		m.viewport.GotoTop()
 	case appliedMsg:
@@ -238,6 +243,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+	if m.screen == agentSelect && m.editingDest && len(m.inputs) > 1 {
+		var cmd tea.Cmd
+		m.inputs[1], cmd = m.inputs[1].Update(msg)
+		return m, cmd
+	}
 	if (m.screen == serverList || m.screen == keyList) && m.searching {
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
@@ -319,11 +329,28 @@ func (m Model) enterAgentSelect() (tea.Model, tea.Cmd) {
 	if m.agentsMDMode == "" {
 		m.agentsMDMode = scaffold.ExistingAppend
 	}
+	if len(m.inputs) > 1 {
+		m.inputs[1].Blur()
+	}
+	m.editingDest = false
 	m.agentFocus = 0
 	m.formError = ""
 	m.screen = agentSelect
 	m.viewport.GotoTop()
 	return m, nil
+}
+
+func (m *Model) finishDestEdit() {
+	if len(m.inputs) > 1 {
+		m.inputs[1].Blur()
+	}
+	m.editingDest = false
+	targetDir, err := m.resolvedTargetDir()
+	if err == nil {
+		exists, _ := scaffold.HasExistingFile(targetDir, "AGENTS.md")
+		m.agentsMDExists = exists
+	}
+	m.clampAgentFocus()
 }
 
 func (m Model) prepare() (tea.Model, tea.Cmd) {

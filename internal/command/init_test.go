@@ -16,19 +16,29 @@ func TestCLIContracts(t *testing.T) {
 		extra       []string
 		input       string
 		interactive bool
+		preexisting bool
 		code        int
 		writes      bool
 	}{
-		{"dry run", []string{"--dry-run"}, "", false, 0, false},
-		{"missing yes", nil, "", false, 2, false},
-		{"yes", []string{"--yes"}, "", false, 0, true},
-		{"confirmed", nil, "yes\n", true, 0, true},
-		{"declined", nil, "n\n", true, 130, false},
-		{"yes still asks in terminal", []string{"--yes"}, "\n", true, 130, false},
-		{"eof cancels", nil, "", true, 130, false},
+		{"dry run", []string{"--dry-run"}, "", false, false, 0, false},
+		{"missing yes", nil, "", false, false, 2, false},
+		{"yes", []string{"--yes"}, "", false, false, 0, true},
+		{"interactive clean applies directly", nil, "", true, false, 0, true},
+		{"interactive yes applies overwrite without prompt", []string{"--force", "--yes"}, "", true, true, 0, true},
+		{"interactive overwrite confirmed", []string{"--force"}, "yes\n", true, true, 0, true},
+		{"interactive overwrite declined", []string{"--force"}, "n\n", true, true, 130, false},
+		{"interactive overwrite eof cancels", []string{"--force"}, "", true, true, 130, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "generated")
+			if tc.preexisting {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("mine"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			args := append([]string{"init", "python", "demo", "--target", dir, "--json"}, tc.extra...)
 			code, out, _ := run(t, args, tc.interactive, tc.input)
 			if code != tc.code {
@@ -44,6 +54,71 @@ func TestCLIContracts(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "pyproject.toml"))
 			if (err == nil) != tc.writes {
 				t.Fatalf("unexpected write: %v", err)
+			}
+		})
+	}
+}
+
+func TestInteractiveConflictResolutionCLI(t *testing.T) {
+	// Default Enter skips conflicting file while creating remaining files.
+	dirSkip := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirSkip, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirSkip, "docs/CONTRIBUTING.md"), []byte("custom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := run(t, []string{"init", "agent", dirSkip, "--json"}, true, "\n")
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, out)
+	}
+	gotDoc, _ := os.ReadFile(filepath.Join(dirSkip, "docs/CONTRIBUTING.md"))
+	if string(gotDoc) != "custom" {
+		t.Fatal("skipped conflict was overwritten")
+	}
+	if _, err := os.Stat(filepath.Join(dirSkip, "AGENTS.md")); err != nil {
+		t.Fatal("non-conflicting AGENTS.md was not written")
+	}
+
+	// 'r' replaces conflicting file.
+	dirReplace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirReplace, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirReplace, "docs/CONTRIBUTING.md"), []byte("custom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = run(t, []string{"init", "agent", dirReplace, "--json"}, true, "r\n")
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, out)
+	}
+	gotDoc2, _ := os.ReadFile(filepath.Join(dirReplace, "docs/CONTRIBUTING.md"))
+	if string(gotDoc2) == "custom" {
+		t.Fatal("replace choice did not overwrite conflict")
+	}
+
+	// 'c' or EOF cancels without writing.
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{"cancel", "c\n"},
+		{"eof", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dirCancel := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dirCancel, "docs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dirCancel, "docs/CONTRIBUTING.md"), []byte("custom"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			code, out, _ := run(t, []string{"init", "agent", dirCancel, "--json"}, true, tc.input)
+			if code != 130 {
+				t.Fatalf("expected 130, got %d: %s", code, out)
+			}
+			if _, err := os.Stat(filepath.Join(dirCancel, "AGENTS.md")); err == nil {
+				t.Fatal("cancelled conflict resolution wrote files")
 			}
 		})
 	}

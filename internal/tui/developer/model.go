@@ -18,6 +18,7 @@ import (
 	"golang.org/x/term"
 
 	gitlocal "github.com/AIAI-Laboratory/aiai-cli/internal/git"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/keys"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/workspace"
 )
@@ -367,7 +368,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadDiff()
 		}
 		if m.help {
-			if key == "?" || key == "q" || key == "esc" {
+			if key == "?" || keys.IsBack(key, true) {
 				m.help = false
 			}
 			return m, nil
@@ -376,7 +377,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help = true
 			return m, nil
 		}
-		if key == "q" || key == "esc" {
+		if keys.IsBack(key, true) {
 			if m.detail {
 				m.detail = false
 				m.timeline = nil
@@ -416,9 +417,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next, cmd, handled := m.gitShortcut(key); handled {
 			return next, cmd
 		}
-		if m.opts.Mode == "git" && (key == "left" || key == "right" || key == "h" || key == "l") {
+		if m.opts.Mode == "git" && (keys.IsLeft(key) || keys.IsRight(key)) {
 			delta := 1
-			if key == "left" || key == "h" {
+			if keys.IsLeft(key) {
 				delta = -1
 			}
 			m.opts.Page = (m.opts.Page + delta + len(pages)) % len(pages)
@@ -427,7 +428,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.search.SetValue("")
 			return m.refresh()
 		}
-		if key == "tab" && m.opts.Mode == "git" && m.opts.Page == 1 {
+		if (keys.IsNext(key) || keys.IsPrev(key)) && m.opts.Mode == "git" && m.opts.Page == 1 {
 			m.preview = !m.preview
 			return m, nil
 		}
@@ -536,7 +537,7 @@ func (m Model) bodyHeight() int {
 func (m Model) View() tea.View {
 	width := max(1, min(120, m.width-4))
 	if m.width < 40 || m.height < 15 {
-		view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render("AIAI\nResize to at least 40 × 15\nq back"))
+		view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render("AIAI\nResize to at least 40 × 15\nesc back"))
 		view.AltScreen = true
 		return view
 	}
@@ -558,9 +559,9 @@ func (m Model) View() tea.View {
 		header += "\n" + ansi.Truncate(oneLine(m.notice), width, "…")
 	}
 	height := m.bodyHeight()
-	footer := "↑↓ select · enter timeline · g git · z focus · ? help · q back"
+	footer := "↑↓ select · enter timeline · g git · z focus · ? help · esc back"
 	if width < 80 {
-		footer = "↑↓ · enter open · ? help · q back"
+		footer = "↑↓ · enter open · ? help · esc back"
 	}
 	body := ""
 	switch {
@@ -570,29 +571,29 @@ func (m Model) View() tea.View {
 	case m.dialog.kind != "":
 		body, footer = m.gitDialogView(width)
 	case m.help:
-		body = "Local developer workspace\n\nGit: a actions · c commit · b branches\np push · P pull · f fetch · : Git command\nChanges: Space stage/unstage · A/U all\nBranches: Enter switch · n new\nActions: / find · ↑↓ select · Enter open\nStash · merge/rebase · tags · remotes\nGit uses your terminal for auth/editors.\n←/→ pages · / search · r refresh\nEsc/q back · Ctrl+C cancel"
+		body = "Local developer workspace\n\nGit: a actions · c commit · b branches\np push · P pull · f fetch · : Git command\nChanges: Space stage/unstage · A/U all\nBranches: Enter switch · n new\nActions: / find · ↑↓ select · Enter open\nStash · merge/rebase · tags · remotes\nGit uses your terminal for auth/editors.\n←/→ pages · / search · r refresh\nEsc (or q) back · Ctrl+C cancel"
 	case m.loading:
 		body = "Loading local data…"
-		footer = "q back · ctrl+c cancel"
+		footer = "esc back · ctrl+c cancel"
 	case m.err != nil:
-		body = clean(m.err.Error()) + "\n\nr retry · q back"
-		footer = "r retry · q back"
+		body = clean(m.err.Error()) + "\n\nr retry · esc back"
+		footer = "r retry · esc back"
 	default:
 		if m.opts.Mode == "git" {
-			footer = "a actions · p push · P pull · f fetch · c commit · ←→ pages · q back"
+			footer = "a actions · p push · P pull · f fetch · c commit · ←/→ pages · esc back"
 			switch m.opts.Page {
 			case 0:
 				body = m.statusView(width, height)
 			case 1:
-				footer = "space stage/unstage · c commit · a actions · tab diff · s staged · q back"
+				footer = "space stage/unstage · c commit · a actions · tab diff · s staged · esc back"
 				if m.preview {
-					footer = "↑↓ diff · tab files · c commit · a actions · s staged · q back"
+					footer = "↑↓ diff · tab files · c commit · a actions · s staged · esc back"
 				}
 				body = m.diffView(width, height)
 			case 2:
 				body = m.historyView(width, height)
 			case 3:
-				footer = "↑↓ select · enter switch · n new branch · a actions · q back"
+				footer = "↑↓ select · enter switch · n new branch · a actions · esc back"
 				body = m.branchesView(width, height)
 			case 4:
 				body = m.worktreesView(width, height)
@@ -602,31 +603,31 @@ func (m Model) View() tea.View {
 				body = m.scrollRows(m.rows, width, height)
 			}
 			if width < 80 {
-				footer = "a actions · p push · P pull · f fetch · q back"
+				footer = "a actions · p push · P pull · f fetch · esc back"
 				if m.opts.Page == 1 {
-					footer = "space stage · c commit · a actions · q back"
+					footer = "space stage · c commit · a actions · esc back"
 					if m.preview {
-						footer = "tab files · s staged · a actions · q back"
+						footer = "tab files · s staged · a actions · esc back"
 					}
 				}
 				if m.opts.Page == 3 {
-					footer = "enter switch · n new · a actions · q back"
+					footer = "enter switch · n new · a actions · esc back"
 				}
 			}
 			if width < 60 {
-				footer = "a actions · p/P sync · q back"
+				footer = "a actions · p/P sync · esc back"
 				if m.opts.Page == 1 {
-					footer = "space stage · a actions · q back"
+					footer = "space stage · a actions · esc back"
 				}
 				if m.opts.Page == 3 {
-					footer = "enter switch · a actions · q back"
+					footer = "enter switch · a actions · esc back"
 				}
 			}
 		} else if m.detail {
 			body = m.detailView(width, height)
-			footer = "↑↓ scroll · g git · z focus · ? help · q back"
+			footer = "↑↓ scroll · g git · z focus · ? help · esc back"
 			if width < 60 {
-				footer = "↑↓ scroll · ? help · q back"
+				footer = "↑↓ scroll · ? help · esc back"
 			}
 		} else {
 			body = m.boardView(width, height)

@@ -145,14 +145,15 @@ func Home(cursor int, query, category string, t Theme) string {
 func Help(t Theme) string {
 	return t.Heading("Help & shortcuts", "Keyboard-first, predictable everywhere.") +
 		t.Section("Navigate") + "\n" +
-		"  ↑/↓  j/k      Move selection\n" +
+		"  ↑/↓  j/k      Move selection or scroll\n" +
+		"  ←/→           Horizontal tabs, radios, or text cursor\n" +
 		"  Enter         Open or confirm\n" +
-		"  Esc           Back or dismiss\n\n" +
+		"  Esc (or q)    Back, dismiss, or quit\n\n" +
 		t.Section("Find") + "\n" +
 		"  /             Search the current list\n" +
 		"  Tab           Complete a command\n\n" +
-		t.Section("Forms") + "\n" +
-		"  Tab / Shift+Tab  Next / previous field\n" +
+		t.Section("Forms & Lists") + "\n" +
+		"  Tab / Shift+Tab  Next / previous field or pane\n" +
 		"  Space            Toggle option\n\n" +
 		t.Section("Global") + "\n" +
 		"  ?             Toggle this help\n" +
