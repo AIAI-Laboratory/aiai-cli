@@ -17,7 +17,7 @@ import (
 func (m Model) View() tea.View {
 	width, height := max(1, m.width), max(1, m.height)
 	if width < 32 || height < 12 {
-		view := tea.NewView(lipgloss.NewStyle().MaxWidth(width).MaxHeight(height).Render("AIAI MONITOR\nEnlarge terminal to 32×12\nq quit"))
+		view := tea.NewView(lipgloss.NewStyle().MaxWidth(width).MaxHeight(height).Render("AIAI MONITOR\nEnlarge terminal to 32×12\nesc quit"))
 		view.AltScreen = true
 		return view
 	}
@@ -40,7 +40,7 @@ func (m Model) View() tea.View {
 	}
 	var body string
 	if m.help {
-		body = "KEYBOARD\n\n↑/↓ j/k  Navigate processes or selected panel\nc / m / p  Sort CPU / RAM / PID\n/  Search process names or PID\nTab  Switch panel\n←/→ or [/]  Select network interface\nSpace  Pause / resume sampling\nr  Refresh now\n?  Close help\nEsc / q  Return\n\nRead-only · CPU process usage: 100% per core\nUnavailable metrics display as —"
+		body = "KEYBOARD\n\n↑/↓ j/k  Navigate processes or selected panel\nc / m / p  Sort CPU / RAM / PID\n/  Search process names or PID\nTab / Shift+Tab  Switch panel\n←/→ or [/]  Select network interface\nSpace  Pause / resume sampling\nr  Refresh now\n?  Close help\nEsc (or q)  Back\n\nRead-only · CPU process usage: 100% per core\nUnavailable metrics display as —"
 	} else {
 		if w >= 112 && height >= 26 {
 			column := (w - 6) / 3
@@ -87,9 +87,9 @@ func (m Model) View() tea.View {
 		available := height - lipgloss.Height(header) - lipgloss.Height(body) - 6 - 2*(strings.Count(separator, "\n")-1)
 		body += separator + m.processView(w, max(1, available))
 	}
-	footer := "↑↓ select · tab panel · c/m sort · / search · space pause · ? help · q back"
+	footer := "↑↓ select · tab panel · c/m sort · / search · space pause · ? help · esc back"
 	if w < 80 {
-		footer = "↑/↓ · c/m/p sort · / search · tab · ? help · q back"
+		footer = "↑/↓ · c/m/p sort · / search · tab · ? help · esc back"
 	}
 	if m.searching {
 		footer = "Type to search · enter keep filter · esc clear"

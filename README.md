@@ -39,12 +39,17 @@ Esc returns home. Typing searches every command immediately, Tab completes, and
 Enter selects. Arrows navigate the menu; `j/k` also work while the command field
 is empty.
 
-The wizard selects a template, collects project fields, previews file operations,
-and asks for confirmation. Use arrows or `j/k` in menus, Tab in forms, Enter to
-select, Esc to return, and Ctrl+C to cancel. Use `/help` while typing a command;
-`?` opens contextual help elsewhere. The layout adapts to
-smaller terminals and keeps the focused field visible. Vector and raster versions
-of the AIAI mark live in
+The 3-step wizard (`Select Template` → `Configure` → `Create`) selects a
+template, configures resources (or project fields), shows the file review in
+`Create`, and creates clean plans immediately on Enter—only displaying inline
+resolution options when conflicts or overwrites exist. Use `↑/↓` or `j/k` in
+menus, `←/→` for horizontal controls (tabs, radios, text cursor), Space to
+toggle items (`a` toggles all in Agent Setup), Tab/Shift+Tab to move between
+fields or panes (`Tab`/`d` to edit destination in Agent Setup), `Enter` to open
+or confirm, `Esc` (or `q` when not typing) to go back, and Ctrl+C to cancel.
+Use `/help` while typing a command; `?` opens contextual help elsewhere. The
+layout adapts to smaller terminals and keeps the focused field visible. Vector
+and raster versions of the AIAI mark live in
 [assets/aiai-logo.svg](assets/aiai-logo.svg) and [assets/aiai-logo.png](assets/aiai-logo.png).
 
 ```bash
@@ -93,7 +98,7 @@ moved directories remain registered as unavailable, with saved focus history
 still accessible; unregister/re-register explicitly to change a directory.
 
 Use ↑/↓ or `j/k` to navigate, `/` to search, `r` to refresh, `?` for help and
-Esc/`q` to return. Printable shortcuts are disabled while typing a search.
+Esc (or `q`) to return. Printable shortcuts are disabled while typing a search.
 Git and Workspace load asynchronously; no filesystem or Git queries run in
 their render functions. Boards run at most four project queries concurrently,
 with a four-second budget per project. Errors on one project do not hide others.
@@ -299,7 +304,7 @@ a network interface. Left/right (or `[`/`]`) select an interface directly.
 
 Use `↑/↓` or `j/k` to select a process, `c`/`m`/`p` to sort CPU/RAM/PID, `/` to
 search names or PIDs, Space to pause/resume sampling, `r` to refresh, `?` for
-help, and `q`/Esc to return. Search input captures printable shortcuts as text.
+help, and Esc (or `q`) to return. Search input captures printable shortcuts as text.
 When launched from Home, exiting returns to Home.
 
 Sampling defaults to one second (`--interval` accepts 250ms–10s), runs outside
@@ -379,8 +384,10 @@ details. Access logs use aligned columns where space permits.
 
 `aiai` and `aiai init` open the TUI only with a terminal. Non-interactive generation
 requires `--yes`; `--dry-run` never writes and does not require confirmation.
-In a terminal, an initialization command always displays a preview and asks for
-confirmation even with `--yes`. A dry run displays the preview and exits.
+In a terminal, `--yes` runs without prompting, while interactive runs without `--yes`
+apply clean plans directly after printing the preview and only prompt when `AGENTS.md`
+needs a merge choice, files conflict (skip/replace/cancel), or files would be
+overwritten. A dry run displays the preview and exits.
 
 Positional names are normalized (`My_Project` → `my-project`) for the directory
 and distribution name; the default Python package is `my_project`. `.` uses the

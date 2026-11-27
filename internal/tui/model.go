@@ -32,7 +32,6 @@ const (
 	agentSelect
 	planning
 	preview
-	confirmation
 	applying
 	result
 	help
@@ -94,9 +93,10 @@ type Model struct {
 	agentFocus         int
 	agentChecked       map[string]bool
 	includeAgent       bool
+	editingDest        bool
 	agentsMDExists     bool
 	agentsMDMode       scaffold.ExistingMode
-	confirmYes         bool
+	confirmCursor      int
 	inputs             []textinput.Model
 	command            textinput.Model
 	homeCategory       string
@@ -359,7 +359,7 @@ func (m Model) showAgentsMDModeSelector() bool {
 }
 
 func (m Model) agentSelectSlotCount() int {
-	count := len(m.agentComponents()) + 2 // All + components + Continue
+	count := len(m.agentComponents()) + 1 // All + components
 	if m.showAgentsMDModeSelector() {
 		count++
 	}

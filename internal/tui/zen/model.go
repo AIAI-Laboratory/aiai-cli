@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/keys"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/style"
 	zenmodel "github.com/AIAI-Laboratory/aiai-cli/internal/zen"
 	"github.com/AIAI-Laboratory/aiai-cli/internal/zen/aquarium"
@@ -241,18 +242,18 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 		if m.scrollReadOnly(key) {
 			return m, nil
 		}
-		if key == "?" || key == "esc" || key == "q" {
+		if key == "?" || keys.IsBack(key, true) {
 			m.screen = m.previous
 		}
 		return m, nil
 	}
 	if m.screen == exitConfirm {
-		switch key {
-		case "left", "right", "tab", "h", "l":
+		switch {
+		case keys.IsUp(key), keys.IsDown(key), keys.IsNext(key), keys.IsPrev(key):
 			m.cursor = 1 - m.cursor
-		case "esc", "n":
+		case keys.IsBack(key, true), key == "n":
 			m.screen, m.cursor = m.previous, 0
-		case "enter", "y":
+		case keys.IsConfirm(key), key == "y":
 			if m.cursor == 1 || key == "y" {
 				return m.interruptAndQuit()
 			}
@@ -264,7 +265,7 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 		m.previous, m.screen = m.screen, helpScreen
 		return m, nil
 	}
-	if key == "q" || key == "esc" {
+	if keys.IsBack(key, true) {
 		if m.screen == menu {
 			return m, tea.Quit
 		}
@@ -273,12 +274,12 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case menu:
 		items := 5
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
 			m.cursor = (m.cursor + items - 1) % items
-		case "down", "j":
+		case keys.IsDown(key), keys.IsNext(key):
 			m.cursor = (m.cursor + 1) % items
-		case "enter":
+		case keys.IsConfirm(key):
 			m.screen = []screen{aquariumScreen, focusPresetScreen, statsScreen, historyScreen, settingsScreen}[m.cursor]
 			m.scrollOffset = 0
 			m.detailsFromFocus = false
@@ -287,10 +288,10 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 	case aquariumScreen:
 		m.aquariumKey(key)
 	case focusPresetScreen:
-		switch key {
-		case "up", "down", "j", "k", "tab":
+		switch {
+		case keys.IsUp(key), keys.IsDown(key), keys.IsNext(key), keys.IsPrev(key):
 			m.cursor = 1 - m.cursor
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.cursor == 0 {
 				defaults := zenmodel.DefaultConfig()
 				m.opts.Config.WorkSeconds = defaults.WorkSeconds
@@ -302,16 +303,16 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 			m.screen, m.cursor = focusCustomScreen, 0
 		}
 	case focusCustomScreen:
-		switch key {
-		case "up", "k", "shift+tab":
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
 			m.cursor = (m.cursor + 4) % 5
-		case "down", "j", "tab":
+		case keys.IsDown(key), keys.IsNext(key):
 			m.cursor = (m.cursor + 1) % 5
-		case "left", "h", "-":
+		case keys.IsLeft(key), key == "-":
 			m.adjustFocusConfig(-1)
-		case "right", "l", "+", "=":
+		case keys.IsRight(key), key == "+", key == "=":
 			m.adjustFocusConfig(1)
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.cursor < 4 {
 				m.cursor++
 			} else {
@@ -319,8 +320,8 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 	case focusScreen:
-		switch key {
-		case "p":
+		switch {
+		case key == "p":
 			if m.timer.State != zenmodel.TimerRunning && m.timer.State != zenmodel.TimerPaused {
 				return m, nil
 			}
@@ -335,12 +336,12 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 				status = zenmodel.StatusPaused
 			}
 			return m, m.persist(m.session(m.opts.Now(), status))
-		case "enter":
+		case keys.IsConfirm(key):
 			if m.timer.State == zenmodel.TimerCompleted {
 				m.startNextStage()
 				return m, m.persist(m.session(m.opts.Now(), zenmodel.StatusRunning))
 			}
-		case "s":
+		case key == "s":
 			m.previous, m.screen = focusScreen, statsScreen
 			m.scrollOffset = 0
 			m.detailsFromFocus = true
@@ -351,7 +352,7 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 		if m.scrollReadOnly(key) {
 			return m, nil
 		}
-		if key == "enter" {
+		if keys.IsConfirm(key) {
 			if m.detailsFromFocus {
 				m.screen = focusScreen
 			} else {
@@ -359,12 +360,12 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 	case settingsScreen:
-		switch key {
-		case "up", "k":
+		switch {
+		case keys.IsUp(key), keys.IsPrev(key):
 			m.cursor = (m.cursor + 2) % 3
-		case "down", "j":
+		case keys.IsDown(key), keys.IsNext(key):
 			m.cursor = (m.cursor + 1) % 3
-		case "enter", " ", "space":
+		case keys.IsConfirm(key), keys.IsToggle(key):
 			switch m.cursor {
 			case 0:
 				m.opts.Config.AutoStart = !m.opts.Config.AutoStart
@@ -581,7 +582,7 @@ func (m Model) aquariumHeight() int {
 
 func (m Model) View() tea.View {
 	if m.width < 28 || m.height < 12 {
-		message := "AIAI ZEN\nTerminal too small — resize to at least 28×12\nq quit"
+		message := "AIAI ZEN\nTerminal too small — resize to at least 28×12\nesc quit"
 		if m.height < 5 {
 			message = "AIAI ZEN · enlarge terminal to 28×12"
 		}
@@ -624,7 +625,7 @@ func (m Model) render() string {
 	case helpScreen:
 		body = helpView(m.previous)
 	case exitConfirm:
-		body = bold("End this focus session?") + "\n\nActual focused time will be saved as interrupted.\n\n" + choice("Keep focusing", m.cursor == 0, m.opts.NoColor) + "  " + choice("End session", m.cursor == 1, m.opts.NoColor)
+		body = bold("End this focus session?") + "\n\nActual focused time will be saved as interrupted.\n\n" + choice("Keep focusing", m.cursor == 0, m.opts.NoColor) + "\n" + choice("End session", m.cursor == 1, m.opts.NoColor)
 	}
 	return body
 }
@@ -734,16 +735,16 @@ func (m Model) focusView() string {
 
 func largeTimer(value string) string {
 	digits := map[rune][]string{
-		'0': {"┏━━━━┓", "┃    ┃", "┃    ┃", "┃    ┃", "┃    ┃", "┃    ┃", "┗━━━━┛"},
-		'1': {"  ┏┓  ", "  ┛┃  ", "   ┃  ", "   ┃  ", "   ┃  ", "   ┃  ", " ━━┻━━"},
-		'2': {"━━━━━┓", "     ┃", "     ┃", "┏━━━━┛", "┃     ", "┃     ", "┗━━━━━"},
-		'3': {"━━━━━┓", "     ┃", "     ┃", " ━━━━┫", "     ┃", "     ┃", "━━━━━┛"},
-		'4': {"┃    ┃", "┃    ┃", "┃    ┃", "┗━━━━┫", "     ┃", "     ┃", "     ┃"},
-		'5': {"┏━━━━━", "┃     ", "┃     ", "┗━━━━┓", "     ┃", "     ┃", "━━━━━┛"},
-		'6': {"┏━━━━━", "┃     ", "┃     ", "┣━━━━┓", "┃    ┃", "┃    ┃", "┗━━━━┛"},
-		'7': {"━━━━━┓", "     ┃", "     ┃", "     ┃", "     ┃", "     ┃", "     ┃"},
-		'8': {"┏━━━━┓", "┃    ┃", "┃    ┃", "┣━━━━┫", "┃    ┃", "┃    ┃", "┗━━━━┛"},
-		'9': {"┏━━━━┓", "┃    ┃", "┃    ┃", "┗━━━━┫", "     ┃", "     ┃", "━━━━━┛"},
+		'0': {"╔════╗", "║    ║", "║    ║", "║    ║", "║    ║", "║    ║", "╚════╝"},
+		'1': {"  ╔╗  ", "  ╝║  ", "   ║  ", "   ║  ", "   ║  ", "   ║  ", " ══╩══"},
+		'2': {"═════╗", "     ║", "     ║", "╔════╝", "║     ", "║     ", "╚═════"},
+		'3': {"═════╗", "     ║", "     ║", " ════╣", "     ║", "     ║", "═════╝"},
+		'4': {"║    ║", "║    ║", "║    ║", "╚════╣", "     ║", "     ║", "     ║"},
+		'5': {"╔═════", "║     ", "║     ", "╚════╗", "     ║", "     ║", "═════╝"},
+		'6': {"╔═════", "║     ", "║     ", "╠════╗", "║    ║", "║    ║", "╚════╝"},
+		'7': {"═════╗", "     ║", "     ║", "     ║", "     ║", "     ║", "     ║"},
+		'8': {"╔════╗", "║    ║", "║    ║", "╠════╣", "║    ║", "║    ║", "╚════╝"},
+		'9': {"╔════╗", "║    ║", "║    ║", "╚════╣", "     ║", "     ║", "═════╝"},
 		':': {"  ", "  ", " ●", "  ", " ●", "  ", "  "},
 	}
 	rows := make([]strings.Builder, 7)
@@ -806,7 +807,7 @@ func (m Model) settingsView() string {
 }
 
 func helpView(from screen) string {
-	common := "? close help · q / esc back"
+	common := "? close help · esc (or q) back"
 	if from == focusScreen {
 		return bold("FOCUS HELP") + "\n\np  Pause or resume the timer\nspace  Pause only the aquarium\nf  Feed the fish\ns  View saved statistics\n\n" + common
 	}
@@ -833,11 +834,11 @@ func (m Model) footer() string {
 	if m.width < 40 {
 		switch m.screen {
 		case focusScreen:
-			return "p pause · q end"
+			return "p pause · esc end"
 		case aquariumScreen:
-			return "f feed · q back"
+			return "f feed · esc back"
 		case helpScreen:
-			return "? close · q back"
+			return "? close · esc back"
 		default:
 			return "enter select · esc back"
 		}
@@ -845,26 +846,28 @@ func (m Model) footer() string {
 	if m.width < 70 {
 		switch m.screen {
 		case menu:
-			return "↑↓ choose · enter open · q quit"
+			return "↑↓ choose · enter open · esc quit"
 		case focusScreen:
-			return "p pause · f feed · q end"
+			return "p pause · f feed · esc end"
 		case aquariumScreen:
-			return "f feed · space pause · q back"
+			return "f feed · space pause · esc back"
 		case focusCustomScreen:
 			return "↑↓ field · ←→ time · enter · esc back"
 		case statsScreen, historyScreen:
 			return "↑↓ scroll · esc back"
 		case helpScreen:
-			return "↑↓ scroll · ? close · q back"
+			return "↑↓ scroll · ? close · esc back"
+		case exitConfirm:
+			return "↑↓ choose · enter confirm · esc back"
 		default:
 			return "↑↓ choose · enter · esc back"
 		}
 	}
 	switch m.screen {
 	case focusScreen:
-		return "p timer · space aquarium · f feed · s stats · ? help · q end"
+		return "p timer · space aquarium · f feed · s stats · ? help · esc end"
 	case aquariumScreen:
-		return "f feed · a/d fish · space pause · +/- speed · ? help · q back"
+		return "f feed · a/d fish · space pause · +/- speed · ? help · esc back"
 	case focusCustomScreen:
 		return "↑↓ field · ←→ adjust · enter start · esc back"
 	case focusPresetScreen:
@@ -874,11 +877,11 @@ func (m Model) footer() string {
 	case settingsScreen:
 		return "↑↓ choose · enter toggle · esc back"
 	case helpScreen:
-		return "↑↓ scroll · ? close · q back"
+		return "↑↓ scroll · ? close · esc back"
 	case exitConfirm:
-		return "←→ choose · enter confirm · esc back"
+		return "↑↓ choose · enter confirm · esc back"
 	default:
-		return "↑↓ choose · enter open · ? help · q quit"
+		return "↑↓ choose · enter open · ? help · esc quit"
 	}
 }
 

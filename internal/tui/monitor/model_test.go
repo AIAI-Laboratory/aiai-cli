@@ -105,6 +105,22 @@ func TestSearchShortcutsAndNavigation(t *testing.T) {
 	if !m.help {
 		t.Fatal("help failed")
 	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(Model)
+	if m.help {
+		t.Fatal("escape did not close help")
+	}
+	startPanel := m.panel
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = next.(Model)
+	if m.panel != (startPanel+1)%5 {
+		t.Fatalf("Tab did not advance panel: got %d", m.panel)
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m = next.(Model)
+	if m.panel != startPanel {
+		t.Fatalf("Shift+Tab did not return panel: got %d", m.panel)
+	}
 }
 
 func TestResponsiveMissingMetrics(t *testing.T) {

@@ -59,7 +59,7 @@ func TestAllGitPagesKeepFooterAndFitWithoutColor(t *testing.T) {
 				if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
 					t.Fatalf("%v page %d overflow: %q", size, page, view)
 				}
-				if !strings.Contains(view, "q back") {
+				if !strings.Contains(view, "esc back") {
 					t.Fatalf("%v page %d footer clipped: %q", size, page, view)
 				}
 				if ansi.Strip(view) != view {

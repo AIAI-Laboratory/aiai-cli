@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	metrics "github.com/AIAI-Laboratory/aiai-cli/internal/monitor"
+	"github.com/AIAI-Laboratory/aiai-cli/internal/tui/keys"
 )
 
 type (
@@ -161,35 +162,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.help {
-			if key == "?" || key == "esc" || key == "q" {
+			if key == "?" || keys.IsBack(key, true) {
 				m.help = false
 			}
 			return m, nil
 		}
-		switch key {
-		case "q", "esc":
+		switch {
+		case keys.IsBack(key, true):
 			return m.quit()
-		case "?":
+		case key == "?":
 			m.help = true
-		case "/":
+		case key == "/":
 			m.searching = true
 			m.panel = 4
 			return m, m.search.Focus()
-		case "tab":
+		case keys.IsNext(key):
 			m.panel = (m.panel + 1) % 5
-		case "c":
+		case keys.IsPrev(key):
+			m.panel = (m.panel + 4) % 5
+		case key == "c":
 			m.order = "cpu"
 			m.cursor = 0
 			m.selectedPID = 0
-		case "m":
+		case key == "m":
 			m.order = "memory"
 			m.cursor = 0
 			m.selectedPID = 0
-		case "p":
+		case key == "p":
 			m.order = "pid"
 			m.cursor = 0
 			m.selectedPID = 0
-		case "space", " ":
+		case keys.IsToggle(key):
 			m.paused = !m.paused
 			m.generation++
 			if m.paused {
@@ -199,17 +202,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if !m.loading {
 				return m.sample()
 			}
-		case "r":
+		case key == "r":
 			if !m.paused && !m.loading {
 				return m.sample()
 			}
-		case "up", "k":
+		case keys.IsUp(key):
 			m.move(-1)
-		case "down", "j":
+		case keys.IsDown(key):
 			m.move(1)
-		case "left", "h", "[":
+		case keys.IsLeft(key), key == "[":
 			m.switchInterface(-1)
-		case "right", "l", "]":
+		case keys.IsRight(key), key == "]":
 			m.switchInterface(1)
 		}
 	}

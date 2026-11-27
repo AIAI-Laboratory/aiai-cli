@@ -154,7 +154,7 @@ func runCmd(m Model, cmd tea.Cmd) (Model, tea.Cmd) {
 	return m, follow
 }
 
-func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
+func TestWizardRequiresPreviewAndAppliesCleanPlanDirectly(t *testing.T) {
 	calls := 0
 	m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python-minimal", DisplayName: "Python"}}, nil, nil, Options{})
 	defer m.cancel()
@@ -171,7 +171,7 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 		t.Fatal(m.screen)
 	}
 	m.inputs[0].SetValue("demo")
-	m.focus = 5
+	// Enter from the form input immediately advances to planning without tabbing to a button.
 	m, cmd := press(m, tea.KeyEnter)
 	if m.screen != planning || calls != 0 {
 		t.Fatal("wrote before planning")
@@ -180,19 +180,10 @@ func TestWizardRequiresPreviewAndConfirmation(t *testing.T) {
 	if m.screen != preview {
 		t.Fatal(m.screen)
 	}
-	m, _ = press(m, tea.KeyEnter)
-	if m.screen != confirmation || m.confirmYes {
-		t.Fatal("confirmation must default to no")
-	}
-	m, _ = press(m, tea.KeyEnter)
-	if m.screen != preview || calls != 0 {
-		t.Fatal("default confirmation wrote files")
-	}
-	m, _ = press(m, tea.KeyEnter)
-	m, _ = press(m, tea.KeyDown)
+	// Clean plans apply directly on Enter from preview without a redundant confirmation screen.
 	m, cmd = press(m, tea.KeyEnter)
-	if m.screen != applying {
-		t.Fatal(m.screen)
+	if m.screen != applying || cmd == nil {
+		t.Fatalf("expected direct apply on clean preview, got screen=%d", m.screen)
 	}
 	m, _ = runCmd(m, cmd)
 	if m.screen != result || calls != 1 || len(m.result.Completed) != 1 {
@@ -246,6 +237,15 @@ func TestTextInputsDoNotCaptureShortcuts(t *testing.T) {
 	m = next.(Model)
 	if m.screen != form || m.inputs[0].Value() != "?" {
 		t.Fatal("form input interpreted ? as a shortcut")
+	}
+	m.screen = agentSelect
+	m.editingDest = true
+	m.inputs[1].SetValue("")
+	_ = m.inputs[1].Focus()
+	next, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	m = next.(Model)
+	if m.screen != agentSelect || m.inputs[1].Value() != "?" {
+		t.Fatal("agentSelect destination input interpreted ? as a shortcut")
 	}
 }
 
@@ -373,13 +373,18 @@ func TestCommandPalette(t *testing.T) {
 
 func TestViewsFitTerminal(t *testing.T) {
 	for _, size := range [][2]int{{18, 8}, {24, 10}, {32, 12}, {60, 22}, {80, 24}, {120, 40}} {
-		for _, s := range []screen{home, selection, form, agentSelect, planning, preview, confirmation, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
+		for _, s := range []screen{home, selection, form, agentSelect, planning, preview, applying, result, help, about, authStarting, authWaiting, authResult, profile, logoutConfirmation, loggingOut, updatePrompt, updating, updateResult, serverLoading, serverList, serverDetail, logLoading, accessLogs, sshFailure, keyLoading, keyList, keyDetail, keyDeleteConfirmation} {
 			t.Run(fmt.Sprintf("%dx%d/screen%d", size[0], size[1], s), func(t *testing.T) {
 				calls := 0
 				m := NewModel(context.Background(), fakePlanner{}, fakeExecutor{&calls}, []templates.TemplateMetadata{{ID: "python", DisplayName: "Python", Description: "A minimal Python project"}}, nil, nil, Options{NoColor: true})
 				defer m.cancel()
 				m.screen = s
-				m.plan = &scaffold.Plan{TargetDir: strings.Repeat("long-path/", 15)}
+				m.plan = &scaffold.Plan{
+					TargetDir: strings.Repeat("long-path/", 15),
+					Operations: []scaffold.Operation{
+						{Path: "docs/CONTRIBUTING.md", Action: scaffold.Conflict},
+					},
+				}
 				m.result = &scaffold.Result{TargetDir: "demo", Completed: []string{"pyproject.toml"}}
 				user := auth.User{ID: "user-1", GitHubID: "42", Login: "octocat"}
 				m.authUser = &user
@@ -879,27 +884,32 @@ func TestWizardAgentSetupFlow(t *testing.T) {
 	m := NewModel(context.Background(), planner, fakeExecutor{&calls}, reg.List(), nil, nil, Options{StartInit: true, NoColor: true})
 	defer m.cancel()
 
-	// Default first item is agent-kit.
+	// Default first item is agent-kit; Enter jumps directly to the resource checklist.
 	if m.screen != selection || !strings.Contains(m.content(), "Agent Setup (Default)") {
 		t.Fatalf("expected Agent Setup pack first on selection screen:\n%s", m.content())
 	}
 	m, _ = press(m, tea.KeyEnter)
-	if m.screen != form || !m.isAgentTemplate() {
-		t.Fatalf("expected agent destination form, got screen=%d", m.screen)
-	}
-	m.inputs[1].SetValue(dir)
-	m.focus = 3 // Continue to resources
-	m, _ = press(m, tea.KeyEnter)
-	if m.screen != agentSelect || !m.agentsMDExists || !m.allAgentComponentsChecked() {
-		t.Fatalf("expected agentSelect with existing AGENTS.md detected and All checked")
+	if m.screen != agentSelect || !m.isAgentTemplate() || !m.allAgentComponentsChecked() {
+		t.Fatalf("expected direct jump to agentSelect, got screen=%d", m.screen)
 	}
 
-	// Toggle All off, verify Continue blocks when empty for standalone agent-kit, then toggle All back on.
-	m, _ = press(m, tea.KeySpace)
-	if m.allAgentComponentsChecked() || len(m.selectedAgentComponents()) != 0 {
-		t.Fatal("All toggle did not clear components")
+	// Edit destination inline via Tab, confirm with Enter -> detects existing AGENTS.md.
+	m, _ = press(m, tea.KeyTab)
+	if !m.editingDest {
+		t.Fatal("Tab did not open inline destination editor")
 	}
-	m.agentFocus = m.agentSelectSlotCount() - 1
+	m.inputs[1].SetValue(dir)
+	m, _ = press(m, tea.KeyEnter)
+	if m.editingDest || !m.agentsMDExists || !m.showAgentsMDModeSelector() {
+		t.Fatalf("expected AGENTS.md detection after confirming inline destination")
+	}
+
+	// Toggle All off via 'a' shortcut, verify Enter blocks when empty, then restore via Space.
+	next, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	m = next.(Model)
+	if m.allAgentComponentsChecked() || len(m.selectedAgentComponents()) != 0 {
+		t.Fatal("'a' shortcut did not clear components")
+	}
 	m, _ = press(m, tea.KeyEnter)
 	if m.screen != agentSelect || m.formError == "" {
 		t.Fatal("empty agent selection should warn instead of proceeding")
@@ -907,10 +917,10 @@ func TestWizardAgentSetupFlow(t *testing.T) {
 	m.agentFocus = 0
 	m, _ = press(m, tea.KeySpace)
 	if !m.allAgentComponentsChecked() {
-		t.Fatal("All toggle did not restore default components")
+		t.Fatal("Space did not restore default components")
 	}
 
-	// Uncheck one item (docs, last component) and confirm All reflects partial selection.
+	// Uncheck one item (docs, last component) with Space, keep focus there, and verify Enter still submits.
 	docsSlot := len(m.agentComponents())
 	m.agentFocus = docsSlot
 	m, _ = press(m, tea.KeySpace)
@@ -933,22 +943,252 @@ func TestWizardAgentSetupFlow(t *testing.T) {
 		t.Fatalf("expected append mode after Left, got %s", m.agentsMDMode)
 	}
 
-	// Continue to preview.
-	m.agentFocus = m.agentSelectSlotCount() - 1
+	// Pressing Enter from modeSlot or Right from a checklist row goes to Step 3 Create (review) -> Right/Enter applies cleanly.
 	m, cmd := press(m, tea.KeyEnter)
 	if m.screen != planning || cmd == nil {
-		t.Fatalf("expected planning screen, got %d", m.screen)
+		t.Fatalf("expected planning screen after Enter, got %d", m.screen)
 	}
 	m, _ = runCmd(m, cmd)
 	if m.screen != preview {
 		t.Fatalf("expected preview screen, got %d", m.screen)
 	}
+	if !strings.Contains(m.View().Content, "1 Select Template") || !strings.Contains(m.View().Content, "3 Create") {
+		t.Fatalf("expected 3-step breadcrumb in view:\n%s", m.View().Content)
+	}
 	previewView := m.content()
-	if !strings.Contains(previewView, "++ append") || !strings.Contains(previewView, "⊘ protected") {
-		t.Fatalf("preview did not render append and protected badges:\n%s", previewView)
+	if !strings.Contains(previewView, "++ append") || !strings.Contains(previewView, "⊘ protected") || !strings.Contains(previewView, "Review & create") {
+		t.Fatalf("preview did not render unified review with append and protected badges:\n%s", previewView)
 	}
 	if planner.got.TemplateID != templates.AgentKitID || planner.got.AgentsMDMode != scaffold.ExistingAppend || !planner.got.ComponentsSpecified {
 		t.Fatalf("unexpected InitRequest: %+v", planner.got)
+	}
+	// Left and Right on Step 3 Create must not apply or leave; Esc steps back to Step 2 Configure,
+	// and Left/Right on a checklist row must not leave or submit; Enter advances and applies.
+	m, _ = press(m, tea.KeyLeft)
+	if m.screen != preview {
+		t.Fatalf("expected Left on preview to stay on preview, got %d", m.screen)
+	}
+	m, cmd = press(m, tea.KeyRight)
+	if m.screen != preview || cmd != nil {
+		t.Fatalf("expected Right on preview to stay on preview without applying, got screen=%d", m.screen)
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != agentSelect {
+		t.Fatalf("expected Esc on Step 3 Create to return to agentSelect, got %d", m.screen)
+	}
+	m.agentFocus = 0
+	m, _ = press(m, tea.KeyLeft)
+	if m.screen != agentSelect {
+		t.Fatalf("expected Left on checklist row to stay on agentSelect, got %d", m.screen)
+	}
+	m, cmd = press(m, tea.KeyRight)
+	if m.screen != agentSelect || cmd != nil {
+		t.Fatalf("expected Right on checklist row to stay on agentSelect, got screen=%d", m.screen)
+	}
+	m, cmd = press(m, tea.KeyEnter)
+	if m.screen != planning || cmd == nil {
+		t.Fatalf("expected planning screen after Enter from checklist row, got %d", m.screen)
+	}
+	m, _ = runCmd(m, cmd)
+	if m.screen != preview {
+		t.Fatalf("expected preview screen after re-entering Create, got %d", m.screen)
+	}
+	m, cmd = press(m, tea.KeyEnter)
+	if m.screen != applying || cmd == nil {
+		t.Fatalf("expected direct apply on clean Create review, got %d", m.screen)
+	}
+	m, _ = runCmd(m, cmd)
+	if m.screen != result || calls != 1 {
+		t.Fatalf("expected result screen after apply, got %d (calls=%d)", m.screen, calls)
+	}
+}
+
+type captureExecutor struct {
+	applied *scaffold.Plan
+}
+
+func (c *captureExecutor) Apply(_ context.Context, p scaffold.Plan) (scaffold.Result, error) {
+	copied := p
+	c.applied = &copied
+	r := scaffold.NewResult(p.TargetDir)
+	for _, op := range p.Operations {
+		switch op.Action {
+		case scaffold.Skip:
+			r.Skipped = append(r.Skipped, op.Path)
+		case scaffold.Protected:
+			r.Protected = append(r.Protected, op.Path)
+		default:
+			r.Completed = append(r.Completed, op.Path)
+		}
+	}
+	return r, nil
+}
+
+func TestWizardConflictAndOverwriteInlineResolution(t *testing.T) {
+	exec := &captureExecutor{}
+	m := NewModel(context.Background(), fakePlanner{}, exec, []templates.TemplateMetadata{{ID: templates.AgentKitID, Kind: templates.KindAgent, DisplayName: "Agent Setup", Components: []templates.Component{{ID: "agents-md", Name: "AGENTS.md", Default: true}}}}, nil, nil, Options{StartInit: true, NoColor: true})
+	defer m.cancel()
+	m.opts.Request.TemplateID = templates.AgentKitID
+	m.screen = preview
+	m.plan = &scaffold.Plan{
+		TemplateID:      templates.AgentKitID,
+		TemplateVersion: "1",
+		TargetDir:       "/tmp/repo",
+		Operations: []scaffold.Operation{
+			{Path: "AGENTS.md", Action: scaffold.Create, Content: []byte("agents")},
+			{Path: "docs/CONTRIBUTING.md", Action: scaffold.Conflict, Content: []byte("new"), ExpectedHash: "abc"},
+			{Path: ".agents/rules/docstring.md", Action: scaffold.Protected},
+		},
+	}
+
+	// Conflict options render inline directly on the Step 3 Create review screen (no separate confirmation screen).
+	content := m.content()
+	if !strings.Contains(content, "Resolve conflicts & create") || !strings.Contains(content, "! conflict") || !strings.Contains(content, "Keep existing") {
+		t.Fatalf("missing inline conflict review and choices:\n%s", content)
+	}
+
+	// Selecting option 2 (Back to configure) with Down, Down, Enter returns to Step 2 without applying.
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyDown)
+	if m.confirmCursor != 2 {
+		t.Fatalf("expected confirmCursor=2, got %d", m.confirmCursor)
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != agentSelect || exec.applied != nil {
+		t.Fatalf("expected return to agentSelect without applying, got screen=%d", m.screen)
+	}
+
+	// Back on Step 3 Create with default option 0 (Keep existing -> skip conflict), Right does not apply; Enter applies.
+	m.screen, m.confirmCursor = preview, 0
+	m, cmd := press(m, tea.KeyRight)
+	if m.screen != preview || cmd != nil {
+		t.Fatalf("expected Right on conflict preview not to apply, got screen=%d", m.screen)
+	}
+	m, cmd = press(m, tea.KeyEnter)
+	if m.screen != applying || cmd == nil {
+		t.Fatalf("expected applying after resolving conflict via Enter, got screen=%d", m.screen)
+	}
+	m, _ = runCmd(m, cmd)
+	if m.screen != result || exec.applied == nil {
+		t.Fatalf("expected result after apply, got screen=%d", m.screen)
+	}
+	if exec.applied.Operations[1].Action != scaffold.Skip {
+		t.Fatalf("expected conflict downgraded to Skip, got %s", exec.applied.Operations[1].Action)
+	}
+	if exec.applied.Operations[2].Action != scaffold.Protected {
+		t.Fatalf("protected rule was altered: %s", exec.applied.Operations[2].Action)
+	}
+
+	// Plan with Overwrite shows inline overwrite confirmation directly on Step 3 Create.
+	exec2 := &captureExecutor{}
+	m2 := NewModel(context.Background(), fakePlanner{}, exec2, nil, nil, nil, Options{NoColor: true})
+	defer m2.cancel()
+	m2.screen = preview
+	m2.plan = &scaffold.Plan{
+		TemplateID:      templates.AgentKitID,
+		TemplateVersion: "1",
+		TargetDir:       "/tmp/repo",
+		Operations: []scaffold.Operation{
+			{Path: "docs/CONTRIBUTING.md", Action: scaffold.Overwrite, Content: []byte("new"), ExpectedHash: "abc"},
+		},
+	}
+	if !strings.Contains(m2.content(), "Confirm overwrites & create") || !strings.Contains(m2.content(), "~ replace") {
+		t.Fatalf("expected inline overwrite options on preview:\n%s", m2.content())
+	}
+	m2, cmd2 := press(m2, tea.KeyEnter)
+	if m2.screen != applying || cmd2 == nil {
+		t.Fatalf("expected applying on overwrite confirm, got screen=%d", m2.screen)
+	}
+	m2, _ = runCmd(m2, cmd2)
+	if exec2.applied == nil || exec2.applied.Operations[0].Action != scaffold.Overwrite {
+		t.Fatalf("expected Overwrite applied, got %+v", exec2.applied)
+	}
+}
+
+func TestStrictSemanticKeyNavigationAndSafeConfirmations(t *testing.T) {
+	reg, err := templates.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	planner := &capturePlanner{}
+	calls := 0
+	m := NewModel(context.Background(), planner, fakeExecutor{&calls}, reg.List(), nil, nil, Options{StartInit: true, NoColor: true})
+	defer m.cancel()
+
+	// Left/Right on selection must not change screen; Enter opens agentSelect; q returns to selection.
+	m, _ = press(m, tea.KeyRight)
+	if m.screen != selection {
+		t.Fatalf("expected Right on selection to stay on selection, got %d", m.screen)
+	}
+	m, _ = press(m, tea.KeyLeft)
+	if m.screen != selection {
+		t.Fatalf("expected Left on selection to stay on selection, got %d", m.screen)
+	}
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != agentSelect {
+		t.Fatalf("expected agentSelect on Enter from selection, got %d", m.screen)
+	}
+	m, _ = press(m, 'q')
+	if m.screen != selection {
+		t.Fatalf("expected q on agentSelect to return to selection, got %d", m.screen)
+	}
+
+	// Switch to python-minimal; Enter opens form; Left/Right inside text input or on checkbox slot must stay on form.
+	m, _ = press(m, tea.KeyDown)
+	m, _ = press(m, tea.KeyEnter)
+	if m.screen != form {
+		t.Fatalf("expected form on Enter for python, got %d", m.screen)
+	}
+	m.inputs[0].SetValue("demo")
+	m, _ = press(m, tea.KeyLeft)
+	if m.screen != form {
+		t.Fatalf("Left inside text input must stay on form, got %d", m.screen)
+	}
+	m.focus = 3 // checkbox slot
+	m, _ = press(m, tea.KeyLeft)
+	if m.screen != form {
+		t.Fatalf("Left on form checkbox must stay on form, got %d", m.screen)
+	}
+	m, _ = press(m, tea.KeyRight)
+	if m.screen != form {
+		t.Fatalf("Right on form checkbox must stay on form, got %d", m.screen)
+	}
+	m, _ = press(m, 'q')
+	if m.screen != selection {
+		t.Fatalf("q on non-input form slot should return to selection, got %d", m.screen)
+	}
+
+	// Confirmation screens must ignore Left/Right so pressing Left never flips No -> Yes.
+	m.screen, m.logoutYes = logoutConfirmation, false
+	for _, k := range []rune{tea.KeyLeft, tea.KeyRight, 'h', 'l'} {
+		m, _ = press(m, k)
+		if m.logoutYes {
+			t.Fatalf("key %v flipped logoutConfirmation from No to Yes", k)
+		}
+	}
+	m, _ = press(m, 'q')
+	if m.screen != home || m.logoutYes {
+		t.Fatalf("q on logoutConfirmation did not cancel safely: screen=%d yes=%v", m.screen, m.logoutYes)
+	}
+
+	m.screen, m.keyDeleteYes = keyDeleteConfirmation, false
+	for _, k := range []rune{tea.KeyLeft, tea.KeyRight, 'h', 'l'} {
+		m, _ = press(m, k)
+		if m.keyDeleteYes {
+			t.Fatalf("key %v flipped keyDeleteConfirmation from No to Yes", k)
+		}
+	}
+	m, _ = press(m, tea.KeyEscape)
+	if m.screen != keyDetail || m.keyDeleteYes {
+		t.Fatalf("Esc on keyDeleteConfirmation did not cancel safely: screen=%d yes=%v", m.screen, m.keyDeleteYes)
+	}
+
+	m.screen, m.updateResultOK, m.updateResultCursor = updateResult, true, 0
+	for _, k := range []rune{tea.KeyLeft, tea.KeyRight, 'h', 'l'} {
+		m, _ = press(m, k)
+		if m.updateResultCursor != 0 {
+			t.Fatalf("key %v changed updateResultCursor", k)
+		}
 	}
 }
 
@@ -969,13 +1209,12 @@ func TestWizardPythonWithAgentToggle(t *testing.T) {
 		t.Fatalf("expected python form with Agent Setup enabled by default")
 	}
 	m.inputs[0].SetValue("demo")
-	// Toggle Include Agent Setup off (slot 3) -> Continue (slot 6) skips agentSelect straight to planning.
+	// Toggle Include Agent Setup off (slot 3) with Space -> Enter from slot 3 skips agentSelect straight to planning.
 	m.focus = 3
 	m, _ = press(m, tea.KeySpace)
 	if m.includeAgent {
 		t.Fatal("failed to toggle Include Agent Setup off")
 	}
-	m.focus = 6
 	m, cmd := press(m, tea.KeyEnter)
 	if m.screen != planning || cmd == nil {
 		t.Fatalf("expected planning when agent setup disabled, got %d", m.screen)
@@ -985,14 +1224,13 @@ func TestWizardPythonWithAgentToggle(t *testing.T) {
 		t.Fatal("expected IncludeAgent=false when toggled off")
 	}
 
-	// Esc back to form, re-enable Agent Setup -> Continue opens agentSelect.
+	// Esc back to form, re-enable Agent Setup -> Enter opens agentSelect.
 	m, _ = press(m, tea.KeyEscape)
 	if m.screen != form {
 		t.Fatalf("expected Esc to return to form, got %d", m.screen)
 	}
 	m.focus = 3
 	m, _ = press(m, tea.KeySpace)
-	m.focus = 6
 	m, _ = press(m, tea.KeyEnter)
 	if m.screen != agentSelect {
 		t.Fatalf("expected agentSelect when Include Agent Setup enabled, got %d", m.screen)

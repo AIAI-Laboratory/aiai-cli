@@ -539,3 +539,92 @@ func TestPythonMinimalComposedWithAgentKit(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanResolveExistingSkipAndOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	customDoc := "# Custom Contributing\n"
+	customRule := "# Custom Rule\n"
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs/CONTRIBUTING.md"), []byte(customDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".agents/rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".agents/rules/docstring.md"), []byte(customRule), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := initializer(t).Plan(context.Background(), project.InitRequest{
+		TemplateID: templates.AgentKitID,
+		TargetDir:  dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.HasConflicts() || p.ConflictCount() != 1 || p.HasOverwrites() || !p.RequiresConfirmation() {
+		t.Fatalf("unexpected plan counts: conflicts=%d overwrites=%d", p.ConflictCount(), p.OverwriteCount())
+	}
+
+	// Resolving with replace=false skips docs/CONTRIBUTING.md while writing remaining files and protecting rules.
+	skipPlan := p.ResolveExisting(false)
+	if skipPlan.HasConflicts() || skipPlan.HasOverwrites() || skipPlan.RequiresConfirmation() {
+		t.Fatalf("expected resolved skip plan to require no confirmation: %+v", skipPlan.Operations)
+	}
+	r, err := (scaffold.FileExecutor{}).Apply(context.Background(), skipPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Completed) != 6 || len(r.Skipped) != 1 || len(r.Protected) != 1 {
+		t.Fatalf("unexpected skip result: %+v", r)
+	}
+	gotDoc, _ := os.ReadFile(filepath.Join(dir, "docs/CONTRIBUTING.md"))
+	if string(gotDoc) != customDoc {
+		t.Fatal("skipped conflict file was overwritten")
+	}
+
+	// Re-plan on a fresh conflict and resolve with replace=true -> overwrites docs/CONTRIBUTING.md, protects rule.
+	dir2 := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir2, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir2, "docs/CONTRIBUTING.md"), []byte(customDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir2, ".agents/rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir2, ".agents/rules/docstring.md"), []byte(customRule), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := initializer(t).Plan(context.Background(), project.InitRequest{
+		TemplateID: templates.AgentKitID,
+		TargetDir:  dir2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overwritePlan := p2.ResolveExisting(true)
+	if overwritePlan.HasConflicts() || overwritePlan.OverwriteCount() != 1 || !overwritePlan.RequiresConfirmation() {
+		t.Fatalf("unexpected overwrite plan state: conflicts=%d overwrites=%d", overwritePlan.ConflictCount(), overwritePlan.OverwriteCount())
+	}
+	if _, err := (scaffold.FileExecutor{}).Apply(context.Background(), overwritePlan); err != nil {
+		t.Fatal(err)
+	}
+	gotDoc2, _ := os.ReadFile(filepath.Join(dir2, "docs/CONTRIBUTING.md"))
+	if string(gotDoc2) == customDoc {
+		t.Fatal("overwrite plan did not replace conflicting file")
+	}
+	gotRule2, _ := os.ReadFile(filepath.Join(dir2, ".agents/rules/docstring.md"))
+	if string(gotRule2) != customRule {
+		t.Fatal("protected rule was overwritten")
+	}
+
+	// Downgrading an Overwrite plan (replace=false) skips overwrites without modifying existing files.
+	downgraded := overwritePlan.ResolveExisting(false)
+	if downgraded.HasOverwrites() || downgraded.RequiresConfirmation() {
+		t.Fatalf("expected downgraded plan to have no overwrites: %+v", downgraded.Operations)
+	}
+}
